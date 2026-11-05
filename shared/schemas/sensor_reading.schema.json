@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RoshanLourdhu/AtmoSync-Dashboard/blob/roshan/shared/schemas/sensor_reading.schema.json",
+  "title": "AtmoSync sensor reading",
+  "description": "One environmental reading from a container transporting a perishable commodity. This contract validates the raw event shape only. It does not define spoilage thresholds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "container_id",
+    "shipment_id",
+    "commodity",
+    "temperature",
+    "humidity",
+    "vibration",
+    "timestamp"
+  ],
+  "properties": {
+    "container_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "description": "Non-empty identifier of the monitored container."
+    },
+    "shipment_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "description": "Non-empty identifier of the shipment."
+    },
+    "commodity": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "description": "Non-empty commodity name. Commodity-specific spoilage thresholds are outside this contract."
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Numeric temperature. The physical unit is not fixed in this contract and must be agreed by the team before analytical use."
+    },
+    "humidity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Humidity on a 0 to 100 scale, inclusive. Treat the value as a percentage unless a later contract revision defines a different scale."
+    },
+    "vibration": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Non-negative vibration magnitude. The unit of measure is not agreed yet and must be confirmed by the team before values are compared or used in risk models."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "description": "Event time as an ISO 8601 date-time in the RFC 3339 profile used by JSON Schema, for example 2026-11-05T10:30:00Z."
+    }
+  }
+}

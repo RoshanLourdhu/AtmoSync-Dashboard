@@ -1,0 +1,37 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local datasets
+local_data/
+data/local/
+*.parquet
+
+# Generated outputs
+output/
+outputs/
+dist/
+build/
+
+# dbt generated artifacts
+dbt_analytics/target/
+dbt_analytics/dbt_packages/
+dbt_analytics/logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
