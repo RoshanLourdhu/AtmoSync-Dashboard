@@ -1,0 +1,7 @@
+# AtmoSync Dashboard - Core Project Dependencies
+confluent-kafka>=2.3.0
+jsonschema>=4.20.0
+python-dotenv>=1.0.0
+snowflake-connector-python>=3.5.0
+pytest>=7.4.0
+
