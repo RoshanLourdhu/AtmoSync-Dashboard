@@ -1,0 +1,10 @@
+{
+  "container_id": "CONT_001",
+  "shipment_id": "SHIP_1001",
+  "commodity": "Apples",
+  "temperature": 8.5,
+  "humidity": 75.2,
+  "vibration": 0.35,
+  "timestamp": "2026-11-05T10:30:00Z"
+}
+
