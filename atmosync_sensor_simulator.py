@@ -7,11 +7,21 @@ Stop with Ctrl+C.
 import csv
 import random
 import time
+import json
+from kafka import KafkaProducer
 from datetime import datetime, timezone
 from pathlib import Path
 
 OUTPUT_FILE = Path("sensor_data.csv")
 INTERVAL_SECONDS = 2
+
+KAFKA_BOOTSTRAP_SERVERS = ['localhost:9092']
+KAFKA_TOPIC = "atmosync-sensor-data"
+
+producer = KafkaProducer(
+    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+    value_serializer=lambda v: json.dumps(v).encode("utf-8")
+)
 CONTAINERS = [
     {"container_id": "C001", "commodity": "Avocados", "origin": "Chennai", "destination": "Bengaluru", "quantity_kg": 1000},
     {"container_id": "C002", "commodity": "Mangoes", "origin": "Chennai", "destination": "Hyderabad", "quantity_kg": 850},
@@ -76,7 +86,11 @@ def main():
                     }
                     writer.writerow(row)
                     f.flush()
-                    print(row)
+
+                    producer.send(KAFKA_TOPIC, row)
+                    producer.flush()
+
+                    print("Published to Kafka:", row)
                     event_num += 1
                 time.sleep(INTERVAL_SECONDS)
         except KeyboardInterrupt:
