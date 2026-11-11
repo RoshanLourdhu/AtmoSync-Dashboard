@@ -1,6 +1,6 @@
-# AtmoSync Snowflake Data Warehousing
+# AtmoSync Snowflake Data Warehousing & Ingestion
 
-This directory contains the Snowflake data warehouse architecture, Data Definition Language (DDL) scripts, and schema definitions for the **AtmoSync Dashboard** platform.
+This directory contains the Snowflake data warehouse architecture, Data Definition Language (DDL) scripts, database connection management, and Python ingestion engine for the **AtmoSync Dashboard** platform.
 
 ---
 
@@ -19,7 +19,7 @@ The `RAW` schema serves as the immutable landing zone for all event streams inge
 | Validates event via schema |
 +----------------------------+
               |
-              | SQL INSERT (Batch / Streaming)
+              | insert_sensor_event(event, topic, partition, offset)
               v
 +-------------------------------------------------------+
 | Snowflake RAW Layer: ATMOSYNC_DB.RAW.SENSOR_READINGS   |
@@ -74,9 +74,105 @@ Every record in `EVENT_PAYLOAD` conforms strictly to the v0.1 data contract:
 
 ---
 
-## 3. How to Execute the DDL Script
+## 3. Python Connector & Environment Configuration
 
-The DDL script `snowflake/sql/001_create_raw_sensor_readings.sql` is fully idempotent (`CREATE ... IF NOT EXISTS`). It can be safely executed multiple times.
+### Installation
+The Snowflake connector is managed via the project root dependencies:
+```powershell
+pip install -r requirements.txt
+```
+*(Package: `snowflake-connector-python>=3.5.0`)*
+
+### Environment Variables
+Configure the following parameters in your local `.env` file (copied from `.env.example`). **Never commit `.env` or hardcode credentials:**
+
+```ini
+# Snowflake Connection Parameters
+SNOWFLAKE_ACCOUNT=xy12345.us-east-1
+SNOWFLAKE_USER=atmosync_svc
+SNOWFLAKE_PASSWORD=StrongPasswordHere!
+SNOWFLAKE_WAREHOUSE=ATMOSYNC_WH
+SNOWFLAKE_DATABASE=ATMOSYNC_DB
+SNOWFLAKE_SCHEMA=RAW
+SNOWFLAKE_ROLE=ATMOSYNC_INGEST_ROLE
+```
+
+---
+
+## 4. Python Ingestion Engine (`snowflake/`)
+
+The Python ingestion engine consists of two modules:
+1. `snowflake/connection.py`: Secure connection manager reading from environment variables.
+2. `snowflake/ingestion.py`: High-throughput, transaction-safe event validator and inserter.
+
+### Key Capabilities:
+- **Contract Enforcement:** Validates events against `shared/schemas/sensor_reading.schema.json` prior to initiating database traffic.
+- **Parameterized SQL:** Utilizes parameter placeholders (`PARSE_JSON(%s)`) preventing SQL injection.
+- **Transaction Safety:** Commits successful inserts; automatically executes `conn.rollback()` on failures.
+- **Resource Management:** Closes cursors and connections deterministically in `finally:` blocks.
+- **Dependency Injection:** Allows passing an external or mock connection for testing and connection reuse.
+
+### Example Usage:
+```python
+from snowflake.ingestion import insert_sensor_event
+
+# Validated IoT reading conforming to sensor_reading.schema.json
+sensor_event = {
+    "container_id": "C001",
+    "shipment_id": "SHIP_1001",
+    "commodity": "Avocados",
+    "temperature": 5.8,
+    "humidity": 86.4,
+    "vibration": 0.14,
+    "timestamp": "2026-11-11T12:00:00Z",
+}
+
+# Ingest event with Kafka streaming coordinates
+success = insert_sensor_event(
+    event=sensor_event,
+    topic="container-sensor-data",
+    partition=0,
+    offset=12405,
+)
+print(f"Event ingested successfully: {success}")
+```
+
+---
+
+## 5. Kafka Consumer Integration Architecture
+
+In the upcoming streaming milestone, the Kafka Consumer (`streaming/consumer/consumer.py`) calls `insert_sensor_event` during message polling:
+
+```python
+from confluent_kafka import Consumer
+from shared.validation import SensorValidationError
+from snowflake.ingestion import insert_sensor_event, SnowflakeIngestionError
+
+# Planned consumer integration loop
+for message in consumer:
+    try:
+        raw_event = json.loads(message.value().decode("utf-8"))
+
+        # Ingest directly into Snowflake RAW table
+        insert_sensor_event(
+            event=raw_event,
+            topic=message.topic(),
+            partition=message.partition(),
+            offset=message.offset(),
+        )
+    except SensorValidationError as val_err:
+        # Route to Dead Letter Queue (DLQ)
+        logger.error(f"Malformed sensor event rejected: {val_err}")
+    except SnowflakeIngestionError as db_err:
+        # Log and handle database retry
+        logger.error(f"Database insertion failed: {db_err}")
+```
+
+---
+
+## 6. How to Execute the DDL Script
+
+The DDL script `snowflake/sql/001_create_raw_sensor_readings.sql` is fully idempotent (`CREATE ... IF NOT EXISTS`).
 
 ### Option A: Via Snowflake Snowsight (Web Interface)
 1. Log into your Snowflake account via Snowsight.
@@ -85,54 +181,13 @@ The DDL script `snowflake/sql/001_create_raw_sensor_readings.sql` is fully idemp
 4. Paste the contents of [snowflake/sql/001_create_raw_sensor_readings.sql](file:///D:/Infotach%20Internship/Project-1-AtmoSync/snowflake/sql/001_create_raw_sensor_readings.sql) and click **Run All**.
 
 ### Option B: Via SnowSQL CLI
-Ensure your connection parameters are configured in `~/.snowsql/config` or use environment variables from `.env`:
 ```powershell
 snowsql -c my_connection -f snowflake/sql/001_create_raw_sensor_readings.sql
 ```
 
-### Option C: Via Python Script
-When runtime infrastructure is provisioned, the script can be applied programmatically using `snowflake-connector-python`:
-```python
-import snowflake.connector
-
-conn = snowflake.connector.connect(...)
-with open("snowflake/sql/001_create_raw_sensor_readings.sql", "r", encoding="utf-8") as f:
-    statements = f.read().split(";")
-    for stmt in statements:
-        if stmt.strip():
-            conn.cursor().execute(stmt)
-```
-
 ---
 
-## 4. Ingestion Mechanism (Future Kafka Consumer Integration)
-
-> [!NOTE]
-> **Status:** The DDL script is implemented. The Kafka consumer service (`streaming/consumer/`) is planned and will be implemented in subsequent backend milestones.
-
-Once the streaming consumer is implemented, it will operate as follows:
-1. **Poll & Deserialization:** The consumer subscribes to topic `container-sensor-data`.
-2. **Schema Validation:** Each JSON record is validated using `shared.validation.validate_sensor_event()`. Malformed records are diverted to a dead-letter queue and excluded from Snowflake.
-3. **Batch Insertion:** Validated records are micro-batched and written to Snowflake using parameterized SQL:
-   ```sql
-   INSERT INTO ATMOSYNC_DB.RAW.SENSOR_READINGS (
-       EVENT_PAYLOAD,
-       KAFKA_TOPIC,
-       KAFKA_PARTITION,
-       KAFKA_OFFSET,
-       INGESTED_AT
-   )
-   SELECT
-       PARSE_JSON(?),
-       ?,
-       ?,
-       ?,
-       CURRENT_TIMESTAMP();
-   ```
-
----
-
-## 5. Downstream Consumption by dbt (`dbt_analytics/`)
+## 7. Downstream Consumption by dbt (`dbt_analytics/`)
 
 In the next phase of the project, Nisha's dbt project will consume `ATMOSYNC_DB.RAW.SENSOR_READINGS`.
 
@@ -165,17 +220,35 @@ staged AS (
 SELECT * FROM staged
 ```
 
-Downstream models (`int_container_conditions`, `fct_spoilage_risk`, `fct_arbitrage_opportunities`) build directly on this staging model to calculate condition drifts, spoilage degradation, and market rerouting recommendations.
+---
+
+## 8. Testing Strategy: Mocked vs. Live Integration
+
+> [!IMPORTANT]
+> **Mocked Unit Tests vs. Live Warehouse Verification:**
+> The automated test suite (`tests/test_snowflake_ingestion.py`) uses mocked Snowflake sessions (`unittest.mock.MagicMock`). It rigorously verifies SQL statement formation, transaction commits, rollbacks, parameter binding, cleanup, and schema error propagation **without requiring actual Snowflake credentials or network connectivity**.
+> Live database execution occurs when environment variables point to an active Snowflake account and `001_create_raw_sensor_readings.sql` has been executed.
+
+### Running the Test Suite:
+```powershell
+# Run Snowflake ingestion and validation unit tests
+python -m pytest -v tests/test_snowflake_ingestion.py
+
+# Run all project test suites
+python -m pytest -v
+```
 
 ---
 
-## 6. Directory Layout
+## 9. Directory Layout
 
 ```text
 snowflake/
+├── __init__.py                            # Package exports
+├── connection.py                          # Snowflake connection manager
+├── ingestion.py                           # Sensor event validation & RAW insertion engine
 ├── README.md                              # This architecture and operations guide
 ├── schemas/                               # Reserved for detailed schema definitions / YAML
 └── sql/
     └── 001_create_raw_sensor_readings.sql # Idempotent DDL script for database, schema, and raw table
 ```
-
