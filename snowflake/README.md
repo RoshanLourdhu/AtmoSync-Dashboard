@@ -107,12 +107,13 @@ The Python ingestion engine consists of two modules:
 
 ### Key Capabilities:
 - **Contract Enforcement:** Validates events against `shared/schemas/sensor_reading.schema.json` prior to initiating database traffic.
+- **Batch & Single-Event Ingestion:** Provides `insert_sensor_event` for individual records and `insert_sensor_events` for high-performance atomic batch ingestion using `executemany`.
 - **Parameterized SQL:** Utilizes parameter placeholders (`PARSE_JSON(%s)`) preventing SQL injection.
-- **Transaction Safety:** Commits successful inserts; automatically executes `conn.rollback()` on failures.
+- **Atomic Transactions:** Commits only when the complete batch succeeds; automatically executes `conn.rollback()` on any failure (preventing partial batch inserts).
 - **Resource Management:** Closes cursors and connections deterministically in `finally:` blocks.
 - **Dependency Injection:** Allows passing an external or mock connection for testing and connection reuse.
 
-### Example Usage:
+### Example Usage: Single-Event Ingestion
 ```python
 from snowflake.ingestion import insert_sensor_event
 
@@ -135,6 +136,38 @@ success = insert_sensor_event(
     offset=12405,
 )
 print(f"Event ingested successfully: {success}")
+```
+
+### Example Usage: Atomic Batch Ingestion
+```python
+from snowflake.ingestion import insert_sensor_events
+
+# Batch of validated IoT sensor events
+batch_events = [
+    {
+        "container_id": "C001",
+        "shipment_id": "SHIP_1001",
+        "commodity": "Avocados",
+        "temperature": 5.8,
+        "humidity": 86.4,
+        "vibration": 0.14,
+        "timestamp": "2026-11-11T12:00:00Z",
+    },
+    {
+        "container_id": "C002",
+        "shipment_id": "SHIP_1002",
+        "commodity": "Bananas",
+        "temperature": 13.2,
+        "humidity": 90.1,
+        "vibration": 0.08,
+        "timestamp": "2026-11-11T12:00:00Z",
+    },
+]
+
+# Atomically insert all events in a single transaction
+# If any event fails validation or insertion, the entire batch is rolled back
+success = insert_sensor_events(batch_events)
+print(f"Batch inserted: {success}")
 ```
 
 ---
@@ -226,15 +259,15 @@ SELECT * FROM staged
 
 > [!IMPORTANT]
 > **Mocked Unit Tests vs. Live Warehouse Verification:**
-> The automated test suite (`tests/test_snowflake_ingestion.py`) uses mocked Snowflake sessions (`unittest.mock.MagicMock`). It rigorously verifies SQL statement formation, transaction commits, rollbacks, parameter binding, cleanup, and schema error propagation **without requiring actual Snowflake credentials or network connectivity**.
+> The automated test suites (`tests/test_snowflake_ingestion.py` and `tests/test_snowflake_batch_ingestion.py`) use mocked Snowflake sessions (`unittest.mock.MagicMock`). They rigorously verify single-event insertion, batch insertion, SQL parameter binding, pre-validation rejection, atomic transaction commits, transaction rollbacks, resource cleanup, and error propagation **without requiring actual Snowflake credentials or network connectivity**.
 > Live database execution occurs when environment variables point to an active Snowflake account and `001_create_raw_sensor_readings.sql` has been executed.
 
 ### Running the Test Suite:
 ```powershell
-# Run Snowflake ingestion and validation unit tests
-python -m pytest -v tests/test_snowflake_ingestion.py
+# Run single & batch Snowflake ingestion unit tests
+python -m pytest -v tests/test_snowflake_ingestion.py tests/test_snowflake_batch_ingestion.py
 
-# Run all project test suites
+# Run all project test suites (42 automated tests)
 python -m pytest -v
 ```
 

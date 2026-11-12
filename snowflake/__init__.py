@@ -16,6 +16,7 @@ from snowflake.ingestion import (
     RAW_SENSOR_TABLE,
     SnowflakeIngestionError,
     insert_sensor_event,
+    insert_sensor_events,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "get_snowflake_config",
     "get_snowflake_connection",
     "insert_sensor_event",
+    "insert_sensor_events",
 ]
