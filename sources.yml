@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: tpch_source
+    database: SNOWFLAKE_SAMPLE_DATA
+    schema: TPCH_SF1
+    tables:
+      - name: CUSTOMER
+  - name: sensor_source
+    database: SNOWFLAKE_LEARNING_DB
+    schema: PUBLIC
+    tables:
+      - name: RAW_SENSOR
