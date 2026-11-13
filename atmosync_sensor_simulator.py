@@ -78,7 +78,7 @@ def main():
         while True:
             for container in CONTAINERS:
                 event = generate_event(container, event_counter)
-                producer.send(KAFKA_TOPIC, value=event)
+                producer.send(KAFKA_TOPIC, key=event["container_id"].encode("utf-8"), value=event)
                 print(f"[{event['sensor_status']}] {event['event_id']} | {event['container_id']} | Temp: {event['temperature_c']}C | Vib: {event['vibration_g']}g")
                 event_counter += 1
             time.sleep(2)
