@@ -1,78 +1,124 @@
-# AtmoSync – Kafka Streaming Architecture & Consumer Service
+# AtmoSync – Kafka Streaming Pipeline: Producer & Consumer Integration
 
-This directory contains the Apache Kafka streaming integration for the **AtmoSync Dashboard** real-time IoT monitoring platform.
+This directory contains the production Apache Kafka streaming integration for the **AtmoSync Dashboard** real-time IoT monitoring platform.
 
 ---
 
-## 1. Architectural Role
+## 1. End-to-End Pipeline Architecture
 
-The **Sensor Kafka Consumer Service** acts as the high-throughput bridge between edge sensor telemetry on Kafka and the Snowflake analytical data warehouse:
+The streaming pipeline connects refrigerated IoT container telemetry to Snowflake RAW batch storage:
 
 ```text
-+-----------------------------+
-|   IoT Container Sensors     |
-|   (Simulators & Producers)  |
-+-----------------------------+
-               |
-               | (JSON payload on topic 'container-sensor-data')
-               v
-+--------------------------------------------------------------+
-|               Kafka Consumer Service (`streaming/consumer`)  |
-|  1. Safe JSON deserialization                                |
-|  2. Schema enforcement (`shared.validation`)                 |
-|  3. Safe isolation of malformed / non-conforming events      |
-|  4. Batch accumulation (default: 10 records)                 |
-|  5. Transactional Snowflake loading (`snowflake.ingestion`)  |
-|  6. Synchronous offset commit ONLY upon insertion success    |
-+--------------------------------------------------------------+
-               |
-               | insert_sensor_events(events=[(payload, topic, part, offset)])
-               v
-+--------------------------------------------------------------+
-| Snowflake RAW Layer: ATMOSYNC_DB.RAW.SENSOR_READINGS         |
-|  - EVENT_PAYLOAD (VARIANT)                                   |
-|  - INGESTED_AT (TIMESTAMP_TZ)                                |
-|  - KAFKA_TOPIC, KAFKA_PARTITION, KAFKA_OFFSET                |
-+--------------------------------------------------------------+
++-------------------------------------------------------------------+
+|               Sensor Simulator (`sensor_simulator/`)              |
+|  - Continuous physics drift (mean-reverting temperature/humidity) |
+|  - Transport anomalies (TEMP_SPIKE, HIGH_VIBRATION, SENSOR_FAULT) |
+|  - Schema standardization (conforms to sensor_reading.schema.json)|
++-------------------------------------------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|               Kafka Producer Service (`streaming/producer/`)       |
+|  - Pre-send schema validation (`shared.validation`)               |
+|  - JSON serialization & container_id key partitioning            |
+|  - Asynchronous delivery callbacks & batch flushing               |
++-------------------------------------------------------------------+
+                                  |
+                                  | Publishes to topic 'container-sensor-data'
+                                  v
++-------------------------------------------------------------------+
+|               Apache Kafka Broker (`localhost:9092`)              |
+|  - Topic: container-sensor-data                                   |
+|  - Partitioned by: container_id                                   |
++-------------------------------------------------------------------+
+                                  |
+                                  | Consumed by consumer group 'atmosync-sensor-consumer'
+                                  v
++-------------------------------------------------------------------+
+|               Kafka Consumer Service (`streaming/consumer/`)       |
+|  - Safe JSON deserialization & malformed payload quarantine       |
+|  - Schema contract enforcement (`validate_sensor_event`)          |
+|  - High-throughput batch aggregation (default: 10 records)        |
+|  - Transactional RAW loading (`snowflake.ingestion`)              |
+|  - Synchronous offset commit ONLY after Snowflake insert succeeds  |
++-------------------------------------------------------------------+
+                                  |
+                                  | insert_sensor_events(events=[(event, topic, part, offset)])
+                                  v
++-------------------------------------------------------------------+
+| Snowflake RAW Layer: ATMOSYNC_DB.RAW.SENSOR_READINGS              |
+|  - EVENT_PAYLOAD (VARIANT)                                        |
+|  - INGESTED_AT (TIMESTAMP_TZ)                                     |
+|  - KAFKA_TOPIC, KAFKA_PARTITION, KAFKA_OFFSET                     |
++-------------------------------------------------------------------+
 ```
 
 ---
 
-## 2. Technical Capabilities
+## 2. Standardized Sensor Event Contract
 
-- **Strict Schema Enforcement:** Validates every incoming event against `shared/schemas/sensor_reading.schema.json` via `validate_sensor_event()`.
-- **Safe Malformed Handling:** Invalid payloads (such as malformed JSON or unaligned contracts) are quarantined with topic, partition, offset, and error reason. Valid records continue through the ingestion pipeline.
-- **Atomic Batch Ingestion:** Valid events are grouped into batches and ingested into `ATMOSYNC_DB.RAW.SENSOR_READINGS` using `snowflake.ingestion.insert_sensor_events`.
-- **Lossless Offset Management:** Kafka offsets are committed synchronously (`commit(asynchronous=False)`) **only after** Snowflake acknowledges successful transaction commit. If database ingestion fails, offsets are **not committed**, guaranteeing zero message loss and supporting replay.
-- **Flexible Dependency Injection:** Fully supports injected mock consumers and Snowflake connections for fast, offline unit testing.
+The official JSON schema is defined at [shared/schemas/sensor_reading.schema.json](file:///D:/Infotach%20Internship/Project-1-AtmoSync/shared/schemas/sensor_reading.schema.json).
+
+### Field Mapping from Simulator Prototype to Official Schema:
+| Sam's Prototype Field | Official Schema Field | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `container_id` | `container_id` | `string` | Monitored refrigerated container identifier (e.g. `C001`) |
+| *(Missing)* | `shipment_id` | `string` | Unique shipment identifier (e.g. `SHIP-1001`) |
+| `commodity` | `commodity` | `string` | Monitored perishable commodity (`Avocados`, `Mangoes`, `Bananas`) |
+| `temperature_c` | `temperature` | `number` | Continuous container temperature in Celsius |
+| `humidity_pct` | `humidity` | `number` | Relative humidity (0 to 100) |
+| `vibration_g` | `vibration` | `number` | Vibration acceleration magnitude ($\ge 0$) |
+| `timestamp_utc` | `timestamp` | `string` | UTC ISO 8601 / RFC 3339 formatted timestamp (e.g. `2026-11-13T12:00:00Z`) |
+| `event_id`, `origin`, `destination`, `quantity_kg`, `sensor_status` | *(Omitted)* | - | Omitted because official schema specifies `"additionalProperties": false` |
 
 ---
 
 ## 3. Configuration & Environment Variables
 
-The consumer service is configured via `.env` (or environment variables):
+Both producer and consumer read from `.env` (or environment variables) without hardcoding secrets:
 
-| Variable | Default | Purpose |
-| :--- | :--- | :--- |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka broker bootstrap list |
-| `KAFKA_TOPIC_SENSOR_DATA` | `container-sensor-data` | Telemetry topic for container sensor readings |
-| `KAFKA_CONSUMER_GROUP` | `atmosync-sensor-consumer` | Consumer group identifier |
-| `KAFKA_AUTO_OFFSET_RESET` | `earliest` | Offset strategy when no prior commit exists |
-| `KAFKA_BATCH_SIZE` | `10` | Maximum messages accumulated per database batch |
-| `KAFKA_POLL_TIMEOUT_SECONDS` | `1.0` | Timeout per message poll in seconds |
+| Variable | Default | Component | Purpose |
+| :--- | :--- | :--- | :--- |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Producer & Consumer | Kafka broker bootstrap list |
+| `KAFKA_TOPIC_SENSOR_DATA` | `container-sensor-data` | Producer & Consumer | Telemetry topic for sensor events |
+| `KAFKA_PRODUCER_CLIENT_ID` | `atmosync-sensor-producer` | Producer | Client identifier for producer |
+| `KAFKA_PRODUCER_ACKS` | `all` | Producer | Broker acknowledgement reliability level |
+| `KAFKA_CONSUMER_GROUP` | `atmosync-sensor-consumer` | Consumer | Consumer group identifier |
+| `KAFKA_AUTO_OFFSET_RESET` | `earliest` | Consumer | Offset strategy for fresh consumer groups |
+| `KAFKA_BATCH_SIZE` | `10` | Consumer | Maximum batch size before flushing to Snowflake |
+| `KAFKA_POLL_TIMEOUT_SECONDS` | `1.0` | Consumer | Message poll timeout |
 
 ---
 
-## 4. Usage Example
+## 4. Usage Examples
 
+### A. Producing Simulated Sensor Telemetry
 ```python
-from streaming.consumer import SensorKafkaConsumer, ConsumerConfig
+from sensor_simulator import SensorSimulator
+from streaming.producer import SensorKafkaProducer
 
-# Initialize consumer from environment configuration
+# Initialize simulator and producer
+simulator = SensorSimulator()
+producer = SensorKafkaProducer()
+
+try:
+    # Generate schema-compliant events and publish batch to Kafka
+    events = simulator.generate_batch()
+    queued_count = producer.produce_batch(events)
+    print(f"Queued and flushed {queued_count} events to topic 'container-sensor-data'")
+finally:
+    producer.close()
+```
+
+### B. Consuming Messages and Ingesting into Snowflake
+```python
+from streaming.consumer import SensorKafkaConsumer
+
+# Initialize consumer from environment variables
 consumer = SensorKafkaConsumer()
 
 try:
-    # Poll and ingest a single batch of messages
+    # Poll and ingest a batch into Snowflake
     batch_result = consumer.consume_once(max_records=10)
     print(
         f"Batch ingested: {batch_result.valid_count} valid records, "
@@ -87,12 +133,15 @@ finally:
 
 ## 5. Automated Testing
 
-All streaming consumer tests run offline using mocked Kafka message interfaces (`tests/test_kafka_consumer.py`):
+All tests execute fully offline with mocked Kafka brokers and mocked Snowflake sessions:
 
 ```powershell
-# Run Kafka consumer tests
+# Run Kafka producer and simulator unit tests
+python -m pytest -v tests/test_kafka_producer.py
+
+# Run Kafka consumer unit tests
 python -m pytest -v tests/test_kafka_consumer.py
 
-# Run complete test suite (53 tests)
+# Run complete test suite (65 tests)
 python -m pytest -v
 ```
