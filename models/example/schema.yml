@@ -1,4 +1,3 @@
-
 version: 2
 
 models:
@@ -18,4 +17,43 @@ models:
         description: "The primary key for this table"
         data_tests:
           - unique
+          - not_null
+
+  - name: stg_customer
+    description: "Staging model for customer data"
+    columns:
+      - name: CUSTOMER_ID
+        description: "Unique customer identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: CUSTOMER_NAME
+        description: "Name of the customer"
+        data_tests:
+          - not_null
+
+      - name: ACCOUNT_BALANCE
+        description: "Customer account balance"
+
+      - name: MARKET_SEGMENT
+        description: "Customer market segment"
+
+  - name: stg_sensor
+    description: "Staging model for sensor data"
+    columns:
+      - name: SENSOR_ID
+        description: "Unique sensor identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: SENSOR_NAME
+        description: "Name of the sensor"
+        data_tests:
+          - not_null
+
+      - name: TEMPERATURE
+        description: "Sensor temperature"
+        data_tests:
           - not_null
