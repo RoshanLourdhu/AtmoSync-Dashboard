@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'ATMOSYNC_DB') }}"
+    schema: RAW
+    description: "Raw telemetry landing layer ingested from Kafka topic container-sensor-data."
+    tables:
+      - name: SENSOR_READINGS
+        description: "Append-only table of container sensor events containing JSON variant payloads."
+        columns:
+          - name: EVENT_PAYLOAD
+            description: "JSON contract payload conforming to shared/schemas/sensor_reading.schema.json."
+          - name: INGESTED_AT
+            description: "Snowflake UTC timestamp when the record was inserted."
+          - name: KAFKA_TOPIC
+            description: "Source Kafka topic name (container-sensor-data)."
+          - name: KAFKA_PARTITION
+            description: "Source Kafka partition index."
+          - name: KAFKA_OFFSET
+            description: "Source Kafka message offset."

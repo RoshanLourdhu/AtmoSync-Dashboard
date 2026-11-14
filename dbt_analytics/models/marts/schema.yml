@@ -1,0 +1,95 @@
+version: 2
+
+models:
+  - name: fct_spoilage_risk
+    description: "Container-level spoilage risk mart evaluating thermal, humidity, and vibration conditions against commodity thresholds."
+    columns:
+      - name: container_id
+        description: "Monitored container identifier."
+        tests:
+          - not_null
+      - name: shipment_id
+        description: "Monitored shipment identifier."
+        tests:
+          - not_null
+      - name: commodity
+        description: "Perishable commodity name."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Avocados', 'Mangoes', 'Bananas']
+      - name: temperature
+        description: "Recorded temperature in Celsius."
+        tests:
+          - not_null
+      - name: humidity
+        description: "Recorded relative humidity (0-100)."
+        tests:
+          - not_null
+      - name: vibration
+        description: "Recorded vibration acceleration magnitude."
+        tests:
+          - not_null
+      - name: temp_threshold_c
+        description: "Thermal limit threshold for the commodity."
+        tests:
+          - not_null
+      - name: temp_risk_flag
+        description: "Binary flag indicating thermal breach (1 = breach, 0 = normal)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: hum_risk_flag
+        description: "Binary flag indicating excess humidity (1 = >85%, 0 = normal)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: vib_risk_flag
+        description: "Binary flag indicating mechanical shock or vibration alert (1 = >0.28g, 0 = normal)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: spoilage_score
+        description: "Weighted composite spoilage risk score: 0.6 * temp + 0.3 * hum + 0.1 * vib."
+        tests:
+          - not_null
+      - name: risk_level
+        description: "Categorical risk classification: NORMAL, WARNING, CRITICAL."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['NORMAL', 'WARNING', 'CRITICAL']
+
+  - name: fct_arbitrage_opportunities
+    description: "Operational rerouting readiness mart identifying containers at elevated spoilage risk requiring route optimization."
+    columns:
+      - name: container_id
+        description: "Monitored container identifier."
+        tests:
+          - not_null
+          - unique
+      - name: shipment_id
+        description: "Monitored shipment identifier."
+        tests:
+          - not_null
+      - name: commodity
+        description: "Perishable commodity name."
+        tests:
+          - not_null
+      - name: risk_level
+        description: "Current risk classification of the container."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['NORMAL', 'WARNING', 'CRITICAL']
+      - name: is_reroute_candidate
+        description: "Boolean indicating whether the container is a candidate for rerouting."
+        tests:
+          - not_null
+      - name: logistics_action_recommendation
+        description: "Prescriptive operational action recommendation."
+        tests:
+          - not_null

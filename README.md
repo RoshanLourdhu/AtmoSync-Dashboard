@@ -170,15 +170,13 @@ Complete step-by-step instructions are available in [docs/team_onboarding.md](do
 
 | Component | Owner | Directory | Status |
 |---|---|---|---|
-| **Sensor Simulator** | Sam | `sensor_simulator/` | Existing implementation requires refactoring |
-| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Not implemented |
-| **Kafka Consumer** | Roshan | `streaming/consumer/` | Not implemented |
-| **Data Validation** | Roshan | `shared/schemas/` & `tests/` | Schema exists; runtime validation not implemented |
-| **Snowflake Ingestion** | Roshan | `snowflake/` | Not implemented |
-| **Data Preprocessing** | Nisha | `dbt_analytics/` | Notebook exists; production pipeline not implemented |
-| **Spoilage Risk Analytics** | Nisha | `dbt_analytics/` | Not implemented |
-| **Commodity Arbitrage Analytics** | Nisha | `dbt_analytics/` | Not implemented |
-| **Superset Dashboard** | Navya | `dashboard/` | Not implemented |
+| **Sensor Simulator** | Sam | `sensor_simulator/` | Implemented (continuous physics drift, anomaly injection, schema standardization) |
+| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Implemented (confluent-kafka, pre-validation, container_id key partitioning, batch delivery) |
+| **Kafka Consumer** | Roshan | `streaming/consumer/` | Implemented (contract validation, DLQ quarantine, batching, offset management) |
+| **Data Validation** | Roshan | `shared/schemas/` & `tests/` | Implemented (JSON Schema draft 2020-12 runtime validator & automated test suite) |
+| **Snowflake Ingestion** | Roshan | `snowflake/` | Implemented (RAW landing DDL, connection manager, single & batch ingestion engine) |
+| **Data Transformations & Marts** | Nisha / Roshan integration | `dbt_analytics/` | Implemented (stg_sensor_readings, fct_spoilage_risk, fct_arbitrage_opportunities, schema tests) |
+| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Implemented (Docker Compose, snowflake-sqlalchemy, KPI blueprint, dataset specs) |
 
 For full details and next implementation steps, see [docs/component_status.md](docs/component_status.md).
 
@@ -190,6 +188,9 @@ For full details and next implementation steps, see [docs/component_status.md](d
 - [System Architecture](docs/system_architecture.md) — Pipeline components and data flow.
 - [Sensor Data Contract](docs/data_contract.md) — Schema v0.1 definitions, field types, and rules.
 - [Integration Guide](docs/integration_guide.md) — Module handoff interfaces and protocols.
+- [KPI Specification](docs/atmosync_kpi_specification.md) — Formulas and thresholds for thermal, humidity, vibration, and spoilage scores.
+- [Dashboard Blueprint](docs/atmosync_dashboard_blueprint.md) — Superset visualization layout, cards, and filtering rules.
+- [Dashboard Integration Guide](docs/dashboard_integration.md) — Containerized Apache Superset deployment and Snowflake connection.
 - [Team Responsibilities](docs/team_responsibilities.md) — Detailed ownership and roadmaps.
 - [Team Git Commit Policy](docs/team_commit_policy.md) — Mid/Final review commit day requirements.
 - [Team Onboarding Guide](docs/team_onboarding.md) — Local Windows environment setup and component execution.

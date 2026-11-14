@@ -1,0 +1,3 @@
+psycopg2-binary
+snowflake-sqlalchemy>=1.5.0
+snowflake-connector-python>=3.5.0

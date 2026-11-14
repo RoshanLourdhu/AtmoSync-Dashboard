@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-superset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-superset}
+      POSTGRES_DB: ${POSTGRES_DB:-superset}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "superset", "-d", "superset" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:-redispassword}" ]
+    volumes:
+      - redis_data:/data
+
+  superset:
+    image: apache/superset:latest
+    environment:
+      - SUPERSET_ENV=development
+      - SUPERSET_LOAD_EXAMPLES=no
+      - SUPERSET_ADMIN_USERNAME=${SUPERSET_ADMIN_USERNAME:-admin}
+      - SUPERSET_ADMIN_FIRST_NAME=${SUPERSET_ADMIN_FIRST_NAME:-Admin}
+      - SUPERSET_ADMIN_LAST_NAME=${SUPERSET_ADMIN_LAST_NAME:-User}
+      - SUPERSET_ADMIN_EMAIL=${SUPERSET_ADMIN_EMAIL:-admin@localhost.com}
+      - SUPERSET_ADMIN_PASSWORD=${SUPERSET_ADMIN_PASSWORD:-admin}
+      - SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://${POSTGRES_USER:-superset}:${POSTGRES_PASSWORD:-superset}@postgres:5432/${POSTGRES_DB:-superset}
+      - SUPERSET_WEBSERVER_ADDRESS=0.0.0.0
+      - SUPERSET_CONFIG_PATH=/app/pythonpath/superset_config.py
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:-atmosync_dev_secret_key_change_in_production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redispassword}
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./config/superset_config.py:/app/pythonpath/superset_config.py
+      - ./requirements-local.txt:/app/requirements-local.txt
+      - superset_home:/app/superset_home
+
+volumes:
+  postgres_data:
+  redis_data:
+  superset_home:

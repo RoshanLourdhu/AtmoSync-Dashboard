@@ -1,0 +1,18 @@
+# AtmoSync Snowflake dbt profile configuration template
+# Copy to profiles.yml or ~/.dbt/profiles.yml
+# Reads credentials safely from environment variables; NEVER commit real credentials.
+
+atmosync_profile:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ATMOSYNC_INGEST_ROLE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'ATMOSYNC_DB') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'ATMOSYNC_WH') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'ANALYTICS') }}"
+      threads: 4
+      client_session_keep_alive: False

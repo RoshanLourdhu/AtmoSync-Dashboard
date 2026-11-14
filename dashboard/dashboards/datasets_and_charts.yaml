@@ -1,0 +1,107 @@
+# AtmoSync Superset Datasets and KPI Metrics Specification
+# Defines semantic layers and charts derived from dbt analytical models.
+
+database_name: "AtmoSync Snowflake"
+
+datasets:
+  - table_name: "STG_SENSOR_READINGS"
+    schema: "STAGING"
+    description: "Raw validated container sensor time-series telemetry."
+    metrics:
+      - metric_name: "avg_temperature"
+        verbose_name: "Average Temperature (°C)"
+        expression: "AVG(temperature)"
+      - metric_name: "max_temperature"
+        verbose_name: "Maximum Temperature (°C)"
+        expression: "MAX(temperature)"
+      - metric_name: "avg_humidity"
+        verbose_name: "Average Humidity (%)"
+        expression: "AVG(humidity)"
+      - metric_name: "max_humidity"
+        verbose_name: "Maximum Humidity (%)"
+        expression: "MAX(humidity)"
+      - metric_name: "vibration_index"
+        verbose_name: "Vibration Index (RMS)"
+        expression: "SQRT(AVG(vibration * vibration))"
+      - metric_name: "total_readings"
+        verbose_name: "Total Telemetry Events"
+        expression: "COUNT(*)"
+
+  - table_name: "FCT_SPOILAGE_RISK"
+    schema: "MARTS"
+    description: "Container risk scores and classification based on thermal and environmental thresholds."
+    metrics:
+      - metric_name: "critical_container_count"
+        verbose_name: "Critical Containers Count"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level = 'CRITICAL' THEN container_id END)"
+      - metric_name: "warning_container_count"
+        verbose_name: "Warning Containers Count"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level = 'WARNING' THEN container_id END)"
+      - metric_name: "at_risk_container_count"
+        verbose_name: "Total At-Risk Containers"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level IN ('CRITICAL', 'WARNING') THEN container_id END)"
+      - metric_name: "avg_spoilage_score"
+        verbose_name: "Average Spoilage Score"
+        expression: "AVG(spoilage_score)"
+
+  - table_name: "FCT_ARBITRAGE_OPPORTUNITIES"
+    schema: "MARTS"
+    description: "Latest operational container status and rerouting candidate flags."
+    metrics:
+      - metric_name: "reroute_candidates_count"
+        verbose_name: "Containers Needing Rerouting"
+        expression: "COUNT(DISTINCT CASE WHEN is_reroute_candidate = TRUE THEN container_id END)"
+
+charts:
+  - slice_name: "Current Thermal Index"
+    viz_type: "big_number_total"
+    dataset: "STG_SENSOR_READINGS"
+    metric: "avg_temperature"
+  - slice_name: "Current Relative Humidity"
+    viz_type: "big_number_total"
+    dataset: "STG_SENSOR_READINGS"
+    metric: "avg_humidity"
+  - slice_name: "Transit Vibration Index"
+    viz_type: "big_number_total"
+    dataset: "STG_SENSOR_READINGS"
+    metric: "vibration_index"
+  - slice_name: "At-Risk Containers"
+    viz_type: "big_number_total"
+    dataset: "FCT_SPOILAGE_RISK"
+    metric: "at_risk_container_count"
+  - slice_name: "Temperature Trend over Transit"
+    viz_type: "echarts_timeseries_line"
+    dataset: "STG_SENSOR_READINGS"
+    time_column: "recorded_at"
+    dimensions: ["container_id"]
+    metrics: ["avg_temperature"]
+  - slice_name: "Humidity Trend over Transit"
+    viz_type: "echarts_timeseries_line"
+    dataset: "STG_SENSOR_READINGS"
+    time_column: "recorded_at"
+    dimensions: ["container_id"]
+    metrics: ["avg_humidity"]
+  - slice_name: "Vibration Intensity Distribution"
+    viz_type: "echarts_area"
+    dataset: "STG_SENSOR_READINGS"
+    time_column: "recorded_at"
+    dimensions: ["commodity"]
+    metrics: ["vibration_index"]
+  - slice_name: "Spoilage Risk Classification Breakdown"
+    viz_type: "pie"
+    dataset: "FCT_SPOILAGE_RISK"
+    dimensions: ["risk_level"]
+    metrics: ["COUNT(*)"]
+  - slice_name: "At-Risk Shipments Requiring Intervention"
+    viz_type: "table"
+    dataset: "FCT_ARBITRAGE_OPPORTUNITIES"
+    columns:
+      - "container_id"
+      - "shipment_id"
+      - "commodity"
+      - "temperature"
+      - "humidity"
+      - "vibration"
+      - "risk_level"
+      - "spoilage_score"
+      - "logistics_action_recommendation"

@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_sensor_readings
+    description: "Staging model that unpacks JSON VARIANT payload from ATMOSYNC_DB.RAW.SENSOR_READINGS into clean relational columns and deduplicates records."
+    columns:
+      - name: container_id
+        description: "Monitored container identifier."
+        tests:
+          - not_null
+      - name: shipment_id
+        description: "Associated shipment identifier."
+        tests:
+          - not_null
+      - name: commodity
+        description: "Monitored perishable commodity."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Avocados', 'Mangoes', 'Bananas']
+      - name: temperature
+        description: "Recorded container temperature in Celsius."
+        tests:
+          - not_null
+      - name: humidity
+        description: "Recorded relative humidity percentage (0-100)."
+        tests:
+          - not_null
+      - name: vibration
+        description: "Recorded vibration acceleration magnitude."
+        tests:
+          - not_null
+      - name: recorded_at
+        description: "RFC 3339 UTC timestamp when the IoT sensor captured the reading."
+        tests:
+          - not_null
+      - name: kafka_topic
+        description: "Source Kafka topic."
+      - name: kafka_partition
+        description: "Source Kafka partition."
+      - name: kafka_offset
+        description: "Source Kafka offset."
+      - name: ingested_at
+        description: "Snowflake ingestion timestamp."
+        tests:
+          - not_null

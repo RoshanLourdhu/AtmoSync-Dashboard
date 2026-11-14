@@ -10,15 +10,15 @@ This document provides a live tracking matrix of all platform components, design
 
 | Component | Owner | Directory | Current Status | Delivery Stage |
 |---|---|---|---|---|
-| **Sensor Simulator** | Sam | `sensor_simulator/` | Existing implementation requires refactoring | In Progress (Flawed root prototype exists on `sam-roshan`; requires relocation and schema alignment) |
-| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Not implemented | Planned (Awaiting simulator refactoring and broker setup) |
-| **Kafka Consumer** | Roshan | `streaming/consumer/` | Not implemented | Planned (Targeting `container-sensor-data` topic ingestion) |
-| **Data Validation** | Roshan | `shared/schemas/` and `tests/` | Schema exists; runtime validation not implemented | Foundation Complete (JSON Schema draft 2020-12 defined; Python validator pending) |
-| **Snowflake Ingestion** | Roshan | `snowflake/` | Not implemented | Planned (Database/schema designed; DDL scripts pending) |
-| **Data Preprocessing** | Nisha | `dbt_analytics/` | Notebook exists; production pipeline not implemented | In Progress (Exploratory prototype in `data_cleaning.ipynb` on `nisha`; dbt pipeline pending) |
-| **Spoilage Risk Analytics** | Nisha | `dbt_analytics/` | Not implemented | Planned (Analytical models `fct_spoilage_risk` to be authored in dbt) |
-| **Commodity Arbitrage Analytics** | Nisha | `dbt_analytics/` | Not implemented | Planned (Market price integration & `fct_arbitrage_opportunities` pending) |
-| **Superset Dashboard** | Navya | `dashboard/` | Not implemented | Planned (Superset assets and views to be created once dbt marts exist) |
+| **Sensor Simulator** | Sam | `sensor_simulator/` | Implemented | Standardized physics drift and anomaly generator in `sensor_simulator/simulator.py` conforming to schema v0.1 |
+| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Implemented | Producer client in `streaming/producer/producer.py` with pre-validation, container key partitioning, and batch delivery |
+| **Kafka Consumer** | Roshan | `streaming/consumer/` | Implemented | Batch consumer in `streaming/consumer/consumer.py` with DLQ quarantine, validation, and offset commit safety |
+| **Data Validation** | Roshan | `shared/schemas/` and `tests/` | Implemented | Official JSON Schema draft 2020-12 and runtime validator in `shared/validation/sensor_validator.py` with 17 tests |
+| **Snowflake Ingestion** | Roshan | `snowflake/` | Implemented | Table DDL in `snowflake/sql/`, connection manager, single and batch `executemany` ingestion engine |
+| **Data Staging & Lineage** | Nisha / Roshan integration | `dbt_analytics/` | Implemented | `stg_sensor_readings.sql` unpacking VARIANT `EVENT_PAYLOAD` with deduplication and Kafka metadata |
+| **Spoilage Risk Analytics** | Nisha / Roshan integration | `dbt_analytics/` | Implemented | `fct_spoilage_risk.sql` with commodity thermal limits, risk flags, and composite spoilage score formula |
+| **Commodity Arbitrage Readiness** | Nisha / Roshan integration | `dbt_analytics/` | Implemented | `fct_arbitrage_opportunities.sql` identifying reroute candidates and prescriptive action recommendations |
+| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Implemented | Docker Compose stack, `snowflake-sqlalchemy` driver, KPI specifications, and dataset/chart definitions |
 
 ---
 

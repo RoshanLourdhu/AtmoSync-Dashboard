@@ -1,0 +1,26 @@
+name: 'atmosync_analytics'
+version: '1.0.0'
+config-version: 2
+
+# Profile defined in profiles.yml (or profiles.yml.example)
+profile: 'atmosync_profile'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  atmosync_analytics:
+    staging:
+      +materialized: view
+      +schema: STAGING
+    marts:
+      +materialized: table
+      +schema: MARTS
