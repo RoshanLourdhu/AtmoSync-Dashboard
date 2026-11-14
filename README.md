@@ -191,6 +191,7 @@ For full details and next implementation steps, see [docs/component_status.md](d
 - [KPI Specification](docs/atmosync_kpi_specification.md) — Formulas and thresholds for thermal, humidity, vibration, and spoilage scores.
 - [Dashboard Blueprint](docs/atmosync_dashboard_blueprint.md) — Superset visualization layout, cards, and filtering rules.
 - [Dashboard Integration Guide](docs/dashboard_integration.md) — Containerized Apache Superset deployment and Snowflake connection.
+- [Data Quality Specification](docs/atmosync_data_quality_specification.md) — Telemetric quality dimensions, missing data handling, and IQR outlier monitoring.
 - [Team Responsibilities](docs/team_responsibilities.md) — Detailed ownership and roadmaps.
 - [Team Git Commit Policy](docs/team_commit_policy.md) — Mid/Final review commit day requirements.
 - [Team Onboarding Guide](docs/team_onboarding.md) — Local Windows environment setup and component execution.
