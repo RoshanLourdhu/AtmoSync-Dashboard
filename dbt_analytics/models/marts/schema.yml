@@ -93,3 +93,95 @@ models:
         description: "Prescriptive operational action recommendation."
         tests:
           - not_null
+
+  - name: fct_sensor_data_quality
+    description: "Audit and data-quality profiling mart classifying raw sensor events into PASS, WARNING, or FAIL with granular anomaly flags and issue reasons."
+    columns:
+      - name: container_id
+        description: "Identifier of the container associated with the sensor reading."
+      - name: shipment_id
+        description: "Identifier of the associated shipment."
+      - name: commodity
+        description: "Commodity type reported in the reading payload."
+      - name: temperature
+        description: "Temperature in Celsius unpacked from payload."
+      - name: humidity
+        description: "Relative humidity percentage unpacked from payload."
+      - name: vibration
+        description: "Vibration acceleration magnitude in g unpacked from payload."
+      - name: recorded_at
+        description: "Timestamp when the sensor event was recorded."
+      - name: quality_status
+        description: "Overall data quality classification: PASS, WARNING, or FAIL."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['PASS', 'WARNING', 'FAIL']
+      - name: is_missing_required_fields
+        description: "Flag indicating missing mandatory contract fields."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_temperature_physically_impossible
+        description: "Flag indicating physically impossible temperature (< -50C or > 60C)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_temperature_operational_anomaly
+        description: "Flag indicating refrigeration departure outside [0C, 25C]."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_humidity_out_of_bounds
+        description: "Flag indicating humidity outside physical 0-100 range."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_humidity_near_saturation
+        description: "Flag indicating humidity approaching condensation limit (> 95%)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_vibration_negative
+        description: "Flag indicating negative vibration magnitude."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_vibration_shock_alert
+        description: "Flag indicating mechanical transit shock exceeding 0.50g."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_timestamp_missing
+        description: "Flag indicating missing event timestamp."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_timestamp_future
+        description: "Flag indicating timestamp clock drift > 5 minutes in future."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_duplicate_event
+        description: "Flag indicating duplicate event occurrence."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: is_unknown_commodity
+        description: "Flag indicating unrecognised commodity type."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: quality_issue_reasons
+        description: "Semicolon-delimited list of detected quality issues and anomaly descriptions."

@@ -15,20 +15,22 @@ Snowflake RAW Layer
        │ - INGESTED_AT (TIMESTAMP_TZ)
        │ - KAFKA_TOPIC, KAFKA_PARTITION, KAFKA_OFFSET
        │
-       ▼
-dbt Staging View (models/staging/stg_sensor_readings.sql)
-       ├─ Unpacks 7 contract fields (container_id, shipment_id, commodity, temperature, humidity, vibration, recorded_at)
-       ├─ Extracts Kafka streaming lineage (topic, partition, offset, ingested_at)
-       └─ Deduplicates events via window function: QUALIFY ROW_NUMBER() OVER (PARTITION BY container_id, recorded_at)
-            │
-            ├──────────────────────────────────────────────────────┐
-            ▼                                                      ▼
-dbt Mart: Spoilage Risk                               dbt Mart: Arbitrage Readiness
-(models/marts/fct_spoilage_risk.sql)                  (models/marts/fct_arbitrage_opportunities.sql)
-  ├─ Evaluates commodity-specific thermal limits        ├─ Filters to latest state per container
-  ├─ Evaluates humidity and vibration breach flags      ├─ Flags is_reroute_candidate = TRUE
-  ├─ Calculates composite Spoilage Score (0.0 to 1.0)   ├─ Prescriptive logistics action recommendations
-  └─ Classifies risk: NORMAL, WARNING, CRITICAL         └─ Architecture ready for market price feeds
+       ├──────────────────────────────────────────────────────┐
+       ▼                                                      ▼
+dbt Staging View                                    dbt Mart: Data Quality & Audit
+(models/staging/stg_sensor_readings.sql)            (models/marts/fct_sensor_data_quality.sql)
+  ├─ Unpacks 7 contract fields                       ├─ Evaluates all raw arrivals (no silent drops)
+  ├─ Extracts streaming lineage                      ├─ Detects missing fields, impossible readings
+  └─ Deduplicates events via window rank             ├─ Detects duplicates, future dates, shock
+       │                                             └─ Classifies: PASS, WARNING, FAIL
+       ├──────────────────────────────────────────────┐
+       ▼                                              ▼
+dbt Mart: Spoilage Risk                         dbt Mart: Arbitrage Readiness
+(models/marts/fct_spoilage_risk.sql)            (models/marts/fct_arbitrage_opportunities.sql)
+  ├─ Commodity thermal limits                     ├─ Filters to latest state per container
+  ├─ Temp/Hum/Vib risk flags                      ├─ Flags is_reroute_candidate = TRUE
+  ├─ Composite Spoilage Score (0.0 to 1.0)        ├─ Prescriptive action recommendations
+  └─ Classifies: NORMAL, WARNING, CRITICAL        └─ Ready for market price feeds
 ```
 
 ---
@@ -93,18 +95,40 @@ FROM {{ source('raw', 'SENSOR_READINGS') }}
        - `MAINTAIN_SCHEDULE` for `NORMAL` cargo.
      - **Data Availability & Commercial Pricing Note:** To prevent analytical distortion, wholesale price spreads and spot market prices are **not fabricated**. Once external destination wholesale market feeds are integrated, price differential columns will be joined here.
 
+  3. `fct_sensor_data_quality.sql`:
+     - **Full Ingestion Profiling:** Directly evaluates all raw arrivals from `ATMOSYNC_DB.RAW.SENSOR_READINGS` without silently dropping records, preserving full auditability.
+     - **Anomaly & Violation Detections:**
+       - *Completeness:* Flags missing mandatory contract fields (`container_id`, `shipment_id`, `commodity`, `temperature`, `humidity`, `vibration`, `recorded_at`).
+       - *Physical Validity:* Detects physically impossible temperatures ($<-50^\circ\text{C}$ or $>60^\circ\text{C}$), negative vibration ($<0.0\text{ g}$), and humidity outside physical bounds ($<0.0\%$ or $>100.0\%$).
+       - *Operational Departures:* Flags refrigeration operational anomalies ($<0^\circ\text{C}$ or $>25^\circ\text{C}$), near-saturation humidity ($>95.0\%$), and mechanical shock spikes ($>0.50\text{ g}$).
+       - *Timeliness & Uniqueness:* Detects missing or future timestamps ($>5\text{ mins}$) and duplicate arrivals per `(container_id, recorded_at)` using window ranking.
+     - **Status Classifications:**
+       - `FAIL`: Fatal structural corruption, missing required keys, physically impossible readings, or negative vibration.
+       - `WARNING`: Parsable events with duplicates, future timestamps, shock spikes, or refrigeration deviations.
+       - `PASS`: Clean reading satisfying all integrity constraints.
+     - **Root-Cause Auditing:** Concatenates all detected issues into `quality_issue_reasons` for operator triage.
+
 ---
 
 ## 4. Data Quality & Schema Testing
 
-dbt tests are declared in `models/staging/schema.yml` and `models/marts/schema.yml`:
+Quality is enforced through both dbt generic schema tests and custom singular test assertions:
 
-- **Not-Null Constraints:** Enforced across all primary business fields (`container_id`, `shipment_id`, `recorded_at`, `temperature`, `humidity`, `vibration`, `spoilage_score`, `risk_level`).
+### A. Generic Schema Tests (`models/staging/schema.yml` & `models/marts/schema.yml`)
+- **Not-Null Constraints:** Enforced across all primary business fields (`container_id`, `shipment_id`, `recorded_at`, `temperature`, `humidity`, `vibration`, `spoilage_score`, `risk_level`, `quality_status`).
 - **Accepted Values:**
   - `commodity`: `['Avocados', 'Mangoes', 'Bananas']`
   - `temp_risk_flag`, `hum_risk_flag`, `vib_risk_flag`: `[0, 1]`
   - `risk_level`: `['NORMAL', 'WARNING', 'CRITICAL']`
+  - `quality_status`: `['PASS', 'WARNING', 'FAIL']`
 - **Uniqueness:** Enforced on `container_id` in `fct_arbitrage_opportunities` to guarantee one operational record per active container.
+
+### B. Singular Custom dbt Tests (`tests/`)
+Located in `dbt_analytics/tests/`, these SQL assertions return failing records:
+1. `assert_stg_humidity_within_bounds.sql`: Asserts 0 records in `stg_sensor_readings` have humidity $< 0.0$ or $> 100.0$.
+2. `assert_stg_vibration_non_negative.sql`: Asserts 0 records in `stg_sensor_readings` have vibration $< 0.0$.
+3. `assert_stg_temperature_physically_plausible.sql`: Asserts 0 records in `stg_sensor_readings` have temperature $<-50.0^\circ\text{C}$ or $>60.0^\circ\text{C}$.
+4. `assert_stg_sensor_readings_unique_event.sql`: Asserts 0 duplicate events exist in staging for `(container_id, recorded_at)`.
 
 ---
 

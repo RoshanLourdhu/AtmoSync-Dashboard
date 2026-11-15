@@ -7,8 +7,11 @@ Verifies:
 3. Verification of Snowflake RAW landing table references (ATMOSYNC_DB.RAW.SENSOR_READINGS).
 4. Validation of spoilage score formula and threshold flags in dbt marts.
 5. Verification that arbitrage mart does NOT fabricate unsupported monetary prices.
-6. Validation of Superset Docker Compose services, dependencies, and snowflake-sqlalchemy connector.
-7. Verification of Superset KPI metric expressions matching the KPI blueprint.
+6. Validation of data quality mart logic (fct_sensor_data_quality.sql) and PASS/WARNING/FAIL classification.
+7. Verification of singular dbt SQL assertion tests in dbt_analytics/tests/.
+8. Validation of fct_sensor_data_quality schema definitions and accepted values.
+9. Validation of Superset Docker Compose services, dependencies, and snowflake-sqlalchemy connector.
+10. Verification of Superset KPI metric expressions matching the KPI blueprint.
 """
 
 from __future__ import annotations
@@ -180,6 +183,136 @@ def test_dbt_schema_tests_definitions() -> None:
     mart_models = {m["name"]: m for m in marts_data["models"]}
     assert "fct_spoilage_risk" in mart_models
     assert "fct_arbitrage_opportunities" in mart_models
+    assert "fct_sensor_data_quality" in mart_models
+
+
+def test_dbt_data_quality_mart_logic() -> None:
+    mart_sql = DBT_ROOT / "models" / "marts" / "fct_sensor_data_quality.sql"
+    assert mart_sql.exists(), "fct_sensor_data_quality.sql does not exist"
+
+    content = mart_sql.read_text(encoding="utf-8")
+
+    # Verify source reference to raw SENSOR_READINGS
+    assert "source('raw', 'SENSOR_READINGS')" in content
+
+    # Verify extraction of all 7 contract fields from EVENT_PAYLOAD
+    contract_fields = [
+        "EVENT_PAYLOAD:container_id::STRING",
+        "EVENT_PAYLOAD:shipment_id::STRING",
+        "EVENT_PAYLOAD:commodity::STRING",
+        "EVENT_PAYLOAD:temperature::FLOAT",
+        "EVENT_PAYLOAD:humidity::FLOAT",
+        "EVENT_PAYLOAD:vibration::FLOAT",
+        "EVENT_PAYLOAD:timestamp::TIMESTAMP_TZ",
+    ]
+    for field in contract_fields:
+        assert field in content, f"Missing payload extraction in data quality mart: {field}"
+
+    # Verify physical sanity thresholds (< -50 or > 60 C, < 0 or > 100 %, < 0 g)
+    assert "-50.0" in content
+    assert "60.0" in content
+    assert "100.0" in content
+    assert "vibration < 0.0" in content
+
+    # Verify operational thresholds (0 to 25 C, 95% humidity, 0.50g vibration)
+    assert "0.0" in content
+    assert "25.0" in content
+    assert "95.0" in content
+    assert "0.50" in content
+
+    # Verify three-tier classification
+    assert "'FAIL'" in content
+    assert "'WARNING'" in content
+    assert "'PASS'" in content
+
+    # Verify issue reasons and flags
+    assert "quality_issue_reasons" in content
+    assert "is_temperature_physically_impossible" in content
+    assert "is_missing_required_fields" in content
+    assert "is_temperature_operational_anomaly" in content
+    assert "is_duplicate_event" in content
+
+
+def test_dbt_singular_tests_definitions() -> None:
+    singular_tests_dir = DBT_ROOT / "tests"
+    assert singular_tests_dir.exists(), "dbt_analytics/tests directory does not exist"
+
+    expected_tests = {
+        "assert_stg_humidity_within_bounds.sql": [
+            "ref('stg_sensor_readings')",
+            "humidity < 0.0",
+            "humidity > 100.0",
+        ],
+        "assert_stg_vibration_non_negative.sql": [
+            "ref('stg_sensor_readings')",
+            "vibration < 0.0",
+        ],
+        "assert_stg_temperature_physically_plausible.sql": [
+            "ref('stg_sensor_readings')",
+            "temperature < -50.0",
+            "temperature > 60.0",
+        ],
+        "assert_stg_sensor_readings_unique_event.sql": [
+            "ref('stg_sensor_readings')",
+            "GROUP BY container_id, recorded_at",
+            "HAVING COUNT(*) > 1",
+        ],
+    }
+
+    for test_filename, required_snippets in expected_tests.items():
+        test_file = singular_tests_dir / test_filename
+        assert test_file.exists(), f"Singular dbt test {test_filename} does not exist"
+        content = test_file.read_text(encoding="utf-8")
+        for snippet in required_snippets:
+            assert snippet in content, f"Missing snippet '{snippet}' in {test_filename}"
+
+
+def test_dbt_data_quality_schema_definitions() -> None:
+    marts_schema = DBT_ROOT / "models" / "marts" / "schema.yml"
+    assert marts_schema.exists(), "models/marts/schema.yml does not exist"
+
+    with open(marts_schema, "r", encoding="utf-8") as f:
+        marts_data = yaml.safe_load(f)
+
+    mart_models = {m["name"]: m for m in marts_data["models"]}
+    assert "fct_sensor_data_quality" in mart_models, "fct_sensor_data_quality not documented in schema.yml"
+
+    dq_model = mart_models["fct_sensor_data_quality"]
+    col_dict = {c["name"]: c for c in dq_model["columns"]}
+
+    mandatory_columns = [
+        "container_id",
+        "shipment_id",
+        "commodity",
+        "temperature",
+        "humidity",
+        "vibration",
+        "recorded_at",
+        "quality_status",
+        "quality_issue_reasons",
+        "is_missing_required_fields",
+        "is_temperature_physically_impossible",
+        "is_temperature_operational_anomaly",
+        "is_humidity_out_of_bounds",
+        "is_humidity_near_saturation",
+        "is_vibration_negative",
+        "is_vibration_shock_alert",
+        "is_timestamp_missing",
+        "is_timestamp_future",
+        "is_duplicate_event",
+        "is_unknown_commodity",
+    ]
+    for col in mandatory_columns:
+        assert col in col_dict, f"Column {col} missing from fct_sensor_data_quality schema"
+
+    # Verify quality_status tests include accepted_values ['PASS', 'WARNING', 'FAIL']
+    status_tests = col_dict["quality_status"].get("tests", [])
+    accepted_values_test = next(
+        (t for t in status_tests if isinstance(t, dict) and "accepted_values" in t),
+        None,
+    )
+    assert accepted_values_test is not None, "quality_status missing accepted_values test"
+    assert set(accepted_values_test["accepted_values"]["values"]) == {"PASS", "WARNING", "FAIL"}
 
 
 # =========================================================================

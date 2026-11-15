@@ -15,10 +15,10 @@ This document provides a live tracking matrix of all platform components, design
 | **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 11 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
-| **dbt Analytics & Staging** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, marts) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
+| **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs) | 4 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
 
-**Total Automated Tests:** 76 passing offline unit and integration tests.
+**Total Automated Tests:** 79 passing offline unit and integration tests.
 
 ---
 
@@ -59,15 +59,17 @@ This document provides a live tracking matrix of all platform components, design
 - **Automated Testing:** 25 tests across `tests/test_snowflake_ingestion.py` and `tests/test_snowflake_batch_ingestion.py` verifying SQL parameter binding, JSON serialization, transaction rollback, and cursor cleanup.
 - **Live Service Verification:** Pending execution of `001_create_raw_sensor_readings.sql` on live Snowflake account.
 
-### 3.6 Data Engineering & dbt Analytics (`dbt_analytics/`)
+### 3.6 Data Engineering, dbt Analytics & Quality Monitoring (`dbt_analytics/`)
 - **Project:** `dbt_analytics/dbt_project.yml`
-- **Owner:** Nisha (Analytical requirements), Roshan (dbt Core architecture)
+- **Owner:** Nisha (Analytical requirements), Roshan (dbt Core architecture & data quality)
 - **Code Completion:** Complete.
   - `stg_sensor_readings.sql`: Unpacks JSON variant fields, extracts streaming metadata, and deduplicates records.
+  - `fct_sensor_data_quality.sql`: Audits all arriving RAW records, detects physical impossibility, completeness, anomalies, and duplicates, classifying records into `PASS`, `WARNING`, and `FAIL` with diagnostic reason tracking.
   - `fct_spoilage_risk.sql`: Calculates commodity-specific thermal limits, humidity and vibration flags, and composite Spoilage Score ($0.6 \cdot \text{Temp} + 0.3 \cdot \text{Hum} + 0.1 \cdot \text{Vib}$).
   - `fct_arbitrage_opportunities.sql`: Identifies reroute candidates and prescriptive logistics actions without fabricating unsupported spot prices.
+  - `tests/assert_stg_*.sql`: Four singular dbt SQL assertion tests validating humidity physical bounds [0, 100], non-negative vibration, temperature physical limits [-50, 60], and staging deduplication uniqueness.
   - `schema.yml`: Comprehensive data quality tests (`not_null`, `unique`, `accepted_values`).
-- **Automated Testing:** 7 tests in `tests/test_dbt_and_dashboard_integration.py` verifying YAML configurations, source bindings, SQL contract compliance, and absence of fabricated prices.
+- **Automated Testing:** 10 tests in `tests/test_dbt_and_dashboard_integration.py` verifying YAML configurations, source bindings, SQL contract compliance, data quality classifications, singular tests, and absence of fabricated prices.
 - **Live Service Verification:** Requires running `dbt run` and `dbt test` against live Snowflake warehouse using `dbt-snowflake`.
 
 ### 3.7 Apache Superset Dashboard (`dashboard/`)
