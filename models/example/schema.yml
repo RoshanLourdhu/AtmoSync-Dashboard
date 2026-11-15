@@ -57,3 +57,34 @@ models:
         description: "Sensor temperature"
         data_tests:
           - not_null
+  - name: stg_commodity
+    description: "Staging model for commodity data"
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: COMMODITY_NAME
+        description: "Name of the commodity"
+        data_tests:
+          - not_null
+
+      - name: CATEGORY
+        description: "Commodity category"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Fruits', 'Grains', 'Vegetables']
+
+      - name: PRICE
+        description: "Price of the commodity"
+        data_tests:
+          - not_null
+
+      - name: QUANTITY
+        description: "Available quantity"
+        data_tests:
+          - not_null
