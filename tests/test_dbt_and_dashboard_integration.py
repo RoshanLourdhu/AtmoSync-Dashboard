@@ -12,6 +12,9 @@ Verifies:
 8. Validation of fct_sensor_data_quality schema definitions and accepted values.
 9. Validation of Superset Docker Compose services, dependencies, and snowflake-sqlalchemy connector.
 10. Verification of Superset KPI metric expressions matching the KPI blueprint.
+11. Validation of Superset data-quality dataset (FCT_SENSOR_DATA_QUALITY) and 8 KPI metric expressions.
+12. Validation of Superset data-quality chart definitions and column references.
+13. Validation of Superset native dashboard filters.
 """
 
 from __future__ import annotations
@@ -381,3 +384,131 @@ def test_dashboard_specifications_validity() -> None:
 
     risk_metrics = {m["metric_name"]: m["expression"] for m in datasets["FCT_SPOILAGE_RISK"]["metrics"]}
     assert "COUNT(DISTINCT" in risk_metrics["at_risk_container_count"]
+
+
+def test_dashboard_data_quality_dataset_and_metrics() -> None:
+    specs_file = DASHBOARD_ROOT / "dashboards" / "datasets_and_charts.yaml"
+    assert specs_file.exists(), "datasets_and_charts.yaml does not exist"
+
+    with open(specs_file, "r", encoding="utf-8") as f:
+        specs_data = yaml.safe_load(f)
+
+    datasets = {d["table_name"]: d for d in specs_data["datasets"]}
+    assert "FCT_SENSOR_DATA_QUALITY" in datasets, "FCT_SENSOR_DATA_QUALITY missing from datasets"
+
+    dq_dataset = datasets["FCT_SENSOR_DATA_QUALITY"]
+    assert dq_dataset["schema"] == "MARTS"
+
+    # Verify real column definitions
+    dataset_cols = {c["name"] for c in dq_dataset["columns"]}
+    expected_cols = {
+        "container_id",
+        "shipment_id",
+        "commodity",
+        "temperature",
+        "humidity",
+        "vibration",
+        "recorded_at",
+        "quality_status",
+        "quality_issue_reasons",
+        "duplicate_occurrence_rank",
+        "is_missing_required_fields",
+        "is_temperature_physically_impossible",
+        "is_temperature_operational_anomaly",
+        "is_humidity_out_of_bounds",
+        "is_humidity_near_saturation",
+        "is_vibration_negative",
+        "is_vibration_shock_alert",
+        "is_timestamp_missing",
+        "is_timestamp_future",
+        "is_duplicate_event",
+        "is_unknown_commodity",
+    }
+    assert expected_cols.issubset(dataset_cols)
+
+    # Verify all 8 data quality KPI metrics
+    metrics = {m["metric_name"]: m["expression"] for m in dq_dataset["metrics"]}
+    assert "total_sensor_readings" in metrics
+    assert metrics["total_sensor_readings"] == "COUNT(*)"
+
+    assert "pass_reading_count" in metrics
+    assert "quality_status = 'PASS'" in metrics["pass_reading_count"]
+
+    assert "warning_reading_count" in metrics
+    assert "quality_status = 'WARNING'" in metrics["warning_reading_count"]
+
+    assert "fail_reading_count" in metrics
+    assert "quality_status = 'FAIL'" in metrics["fail_reading_count"]
+
+    assert "quality_pass_rate" in metrics
+    assert "NULLIF(COUNT(*), 0)" in metrics["quality_pass_rate"]
+    assert "100.0" in metrics["quality_pass_rate"]
+
+    assert "quality_fail_rate" in metrics
+    assert "NULLIF(COUNT(*), 0)" in metrics["quality_fail_rate"]
+    assert "100.0" in metrics["quality_fail_rate"]
+
+    assert "warning_or_failed_containers_count" in metrics
+    assert "COUNT(DISTINCT" in metrics["warning_or_failed_containers_count"]
+    assert "quality_status IN ('WARNING', 'FAIL')" in metrics["warning_or_failed_containers_count"]
+
+    assert "quality_issue_records_count" in metrics
+    assert "quality_issue_reasons IS NOT NULL" in metrics["quality_issue_records_count"]
+
+
+def test_dashboard_data_quality_charts_definitions() -> None:
+    specs_file = DASHBOARD_ROOT / "dashboards" / "datasets_and_charts.yaml"
+    with open(specs_file, "r", encoding="utf-8") as f:
+        specs_data = yaml.safe_load(f)
+
+    charts = {c["slice_name"]: c for c in specs_data["charts"]}
+
+    # Verify all 6 data quality charts exist
+    expected_charts = [
+        "Data Quality Status Distribution",
+        "Data Quality Trend over Time",
+        "Most Frequent Quality Issue Reasons",
+        "Container-wise Quality Status Breakdown",
+        "Commodity-wise Quality Status Breakdown",
+        "Sensor Anomaly Audit Log",
+    ]
+    for chart_name in expected_charts:
+        assert chart_name in charts, f"Chart '{chart_name}' missing from datasets_and_charts.yaml"
+        assert charts[chart_name]["dataset"] == "FCT_SENSOR_DATA_QUALITY"
+
+    # Verify specific chart configurations
+    assert charts["Data Quality Status Distribution"]["viz_type"] == "pie"
+    assert "quality_status" in charts["Data Quality Status Distribution"]["dimensions"]
+
+    assert charts["Data Quality Trend over Time"]["viz_type"] == "echarts_timeseries_line"
+    assert charts["Data Quality Trend over Time"]["time_column"] == "recorded_at"
+
+    assert charts["Most Frequent Quality Issue Reasons"]["viz_type"] == "echarts_bar"
+    assert "quality_issue_reasons" in charts["Most Frequent Quality Issue Reasons"]["dimensions"]
+
+    assert charts["Container-wise Quality Status Breakdown"]["viz_type"] == "echarts_bar"
+    assert "container_id" in charts["Container-wise Quality Status Breakdown"]["dimensions"]
+
+    assert charts["Commodity-wise Quality Status Breakdown"]["viz_type"] == "echarts_bar"
+    assert "commodity" in charts["Commodity-wise Quality Status Breakdown"]["dimensions"]
+
+    assert charts["Sensor Anomaly Audit Log"]["viz_type"] == "table"
+    table_cols = charts["Sensor Anomaly Audit Log"]["columns"]
+    for required_col in ["container_id", "shipment_id", "commodity", "recorded_at", "quality_status", "quality_issue_reasons"]:
+        assert required_col in table_cols, f"Column '{required_col}' missing from Sensor Anomaly Audit Log"
+
+
+def test_dashboard_filter_definitions() -> None:
+    specs_file = DASHBOARD_ROOT / "dashboards" / "datasets_and_charts.yaml"
+    with open(specs_file, "r", encoding="utf-8") as f:
+        specs_data = yaml.safe_load(f)
+
+    assert "filters" in specs_data, "filters section missing from datasets_and_charts.yaml"
+    filters = {f["filter_name"]: f for f in specs_data["filters"]}
+
+    expected_filters = ["Date Range", "Container ID", "Commodity", "Quality Status"]
+    for f_name in expected_filters:
+        assert f_name in filters, f"Filter '{f_name}' missing from filters configuration"
+
+    assert filters["Quality Status"]["column"] == "quality_status"
+    assert "FCT_SENSOR_DATA_QUALITY" in filters["Quality Status"]["targets"]

@@ -16,9 +16,9 @@ This document provides a live tracking matrix of all platform components, design
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
-| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs) | 4 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
+| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
 
-**Total Automated Tests:** 79 passing offline unit and integration tests.
+**Total Automated Tests:** 82 passing offline unit and integration tests.
 
 ---
 
@@ -74,9 +74,15 @@ This document provides a live tracking matrix of all platform components, design
 
 ### 3.7 Apache Superset Dashboard (`dashboard/`)
 - **Stack:** `dashboard/docker-compose.yml`, `dashboard/config/superset_config.py`
-- **Owner:** Navya (BI & Dashboard Lead), Roshan (Integration)
-- **Code Completion:** Complete. Containerized environment (PostgreSQL 13, Redis 6, Superset latest). Snowflake SQLAlchemy driver included in `requirements-local.txt`. Dataset specifications and calculated metric formulas documented in `datasets_and_charts.yaml`.
-- **Automated Testing:** 4 tests in `tests/test_dbt_and_dashboard_integration.py` verifying Compose service dependencies, healthchecks, driver requirements, and calculated metric formulas.
+- **Owner:** Navya (BI & Dashboard Lead), Roshan (Integration & Data Quality)
+- **Code Completion:** Complete.
+  - Containerized environment (PostgreSQL 13, Redis 6, Superset latest).
+  - Snowflake SQLAlchemy driver included in `requirements-local.txt`.
+  - Dataset specifications for 4 tables (`STG_SENSOR_READINGS`, `FCT_SPOILAGE_RISK`, `FCT_ARBITRAGE_OPPORTUNITIES`, `FCT_SENSOR_DATA_QUALITY`).
+  - 15 calculated KPI metrics (including 8 sensor data-quality KPIs: total readings, pass/warning/fail counts, pass/fail percentages, at-risk containers, and issue reason counts).
+  - 15 chart slice specifications (including 6 data-quality visualizations: status distribution, trend over time, frequent issues, container breakdown, commodity breakdown, anomaly audit table).
+  - Native dashboard filter definitions (`Date Range`, `Container ID`, `Commodity`, `Quality Status`).
+- **Automated Testing:** 7 tests in `tests/test_dbt_and_dashboard_integration.py` verifying Compose service dependencies, healthchecks, driver requirements, calculated metric formulas, data quality datasets, chart definitions, and filter configurations.
 - **Live Service Verification:** Requires starting Docker containers (`docker compose up -d`), connecting to live Snowflake database, and assembling dashboard tiles in the UI.
 
 ---
