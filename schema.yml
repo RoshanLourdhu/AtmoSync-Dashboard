@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: my_first_dbt_model
+    description: "A starter dbt model"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        data_tests:
+          - unique
+          - not_null
+
+  - name: my_second_dbt_model
+    description: "A starter dbt model"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        data_tests:
+          - unique
+          - not_null
+
+  - name: stg_customer
+    description: "Staging model for customer data"
+    columns:
+      - name: CUSTOMER_ID
+        description: "Unique customer identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: CUSTOMER_NAME
+        description: "Name of the customer"
+        data_tests:
+          - not_null
+
+      - name: ACCOUNT_BALANCE
+        description: "Customer account balance"
+
+      - name: MARKET_SEGMENT
+        description: "Customer market segment"
+
+  - name: stg_sensor
+    description: "Staging model for sensor data"
+    columns:
+      - name: SENSOR_ID
+        description: "Unique sensor identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: SENSOR_NAME
+        description: "Name of the sensor"
+        data_tests:
+          - not_null
+
+      - name: TEMPERATURE
+        description: "Sensor temperature"
+        data_tests:
+          - not_null
+  - name: stg_commodity
+    description: "Staging model for commodity data"
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity identifier"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: COMMODITY_NAME
+        description: "Name of the commodity"
+        data_tests:
+          - not_null
+
+      - name: CATEGORY
+        description: "Commodity category"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Fruits', 'Grains', 'Vegetables']
+
+      - name: PRICE
+        description: "Price of the commodity"
+        data_tests:
+          - not_null
+
+      - name: QUANTITY
+        description: "Available quantity"
+        data_tests:
+          - not_null
+  
+  - name: fct_commodity_condition
+    description: "Commodity price and stock condition model"
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity identifier"
+        data_tests:
+          - not_null
+
+      - name: PRICE_STATUS
+        description: "Price category based on commodity price"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['High Price', 'Medium Price', 'Low Price']
+
+      - name: STOCK_STATUS
+        description: "Stock availability based on quantity"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Low Stock', 'Medium Stock', 'Available Stock']
+        
+
