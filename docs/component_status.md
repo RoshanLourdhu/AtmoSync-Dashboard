@@ -12,13 +12,13 @@ This document provides a live tracking matrix of all platform components, design
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Sensor Simulator** | Sam / Roshan integration | `sensor_simulator/` | Complete (`simulator.py`) | 12 tests (`tests/test_kafka_producer.py`) | Ready for live broker |
 | **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`) | 12 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
-| **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 11 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
+| **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 20 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
 
-**Total Automated Tests:** 82 passing offline unit and integration tests.
+**Total Automated Tests:** 91 passing offline unit and integration tests.
 
 ---
 
@@ -41,8 +41,16 @@ This document provides a live tracking matrix of all platform components, design
 ### 3.3 Kafka Consumer Service (`streaming/consumer/`)
 - **Module:** `streaming/consumer/consumer.py`
 - **Owner:** Roshan
-- **Code Completion:** Complete. Subscribes to `container-sensor-data`, safely deserializes JSON payloads, enforces runtime schema validation, isolates malformed records into `invalid_records` (dead-letter handling), aggregates valid events into batches, executes atomic batch insertion into Snowflake RAW, and commits Kafka offsets **only upon successful database commit**.
-- **Automated Testing:** 11 tests in `tests/test_kafka_consumer.py` verifying offset safety on DB failure, invalid JSON handling, and batch orchestration.
+- **Code Completion:** Complete.
+  - Subscribes to `container-sensor-data`, safely deserializes JSON payloads, and enforces runtime schema validation.
+  - Isolates malformed or non-conforming records into `invalid_records` (dead-letter tracking) with credential sanitization (`sanitize_raw_payload`).
+  - Aggregates valid events into batches and executes atomic batch insertion into Snowflake RAW (`ATMOSYNC_DB.RAW.SENSOR_READINGS`).
+  - Commits Kafka offsets **only upon successful database commit**; offset commit failures raise `KafkaConsumerError`.
+  - Recovers from Snowflake connection and ingestion failures by rolling back transactions and clearing stale internal connections (`_reset_snowflake_conn`) for automatic reconnection.
+  - Implements resilient poison-pill isolation: pure invalid batches are acknowledged to prevent consumer partition deadlock without executing redundant database queries.
+  - Structured operational logging across lifecycle (startup, message counts, validation splits, ingestion timings, offset commits, and graceful shutdown).
+  - Resilient consumer execution loop `run(max_batches, stop_event)`.
+- **Automated Testing:** 20 tests in `tests/test_kafka_consumer.py` verifying offset safety on DB failure, connection failure recovery, invalid payload sanitization, poison pill handling, single/multi-batch processing, and structured logging.
 - **Live Service Verification:** Requires live Kafka broker connection and live Snowflake warehouse connection.
 
 ### 3.4 Data Validation & Contracts (`shared/schemas/` & `shared/validation/`)

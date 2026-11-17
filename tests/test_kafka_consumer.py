@@ -18,12 +18,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shared.validation import SensorValidationError
+from snowflake.connection import SnowflakeConnectionError
 from snowflake.ingestion import SnowflakeIngestionError
 from streaming.consumer.consumer import (
     BatchIngestionResult,
     ConsumerConfig,
     KafkaConsumerError,
     SensorKafkaConsumer,
+    sanitize_raw_payload,
 )
 
 
@@ -331,3 +333,218 @@ def test_consumer_close_cleanup() -> None:
     consumer.close()
 
     mock_kconsumer.close.assert_called_once()
+
+
+def test_process_batch_snowflake_connection_failure(
+    valid_sensor_event_dict: dict[str, Any]
+) -> None:
+    """Verifies that Snowflake connection failure prevents offset commitment and cleans up."""
+    mock_kconsumer = MagicMock()
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=60)
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=None,  # Internally managed connection
+    )
+
+    with patch(
+        "streaming.consumer.consumer.get_snowflake_connection",
+        side_effect=SnowflakeConnectionError("Could not connect to Snowflake host"),
+    ):
+        with pytest.raises(SnowflakeConnectionError):
+            consumer.process_batch([msg])
+
+    # Offset commit MUST NOT be called!
+    mock_kconsumer.commit.assert_not_called()
+    assert consumer._snowflake_conn is None
+
+
+def test_process_batch_connection_reset_on_ingestion_failure(
+    valid_sensor_event_dict: dict[str, Any]
+) -> None:
+    """Verifies internal connection is closed and cleared on batch ingestion error."""
+    mock_kconsumer = MagicMock()
+    mock_sconn = MagicMock()
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=70)
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=None,  # Internally managed connection
+    )
+    # Simulate internal connection established
+    consumer._snowflake_conn = mock_sconn
+    consumer._external_snowflake_conn = False
+
+    with patch(
+        "streaming.consumer.consumer.insert_sensor_events",
+        side_effect=SnowflakeIngestionError("SQL compilation error"),
+    ):
+        with pytest.raises(SnowflakeIngestionError):
+            consumer.process_batch([msg])
+
+    # Connection was closed and reset to None
+    mock_sconn.close.assert_called_once()
+    assert consumer._snowflake_conn is None
+    mock_kconsumer.commit.assert_not_called()
+
+
+def test_process_batch_single_event(
+    valid_sensor_event_dict: dict[str, Any]
+) -> None:
+    """Verifies single-event batch processes cleanly and commits."""
+    mock_kconsumer = MagicMock()
+    mock_sconn = MagicMock()
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=80)
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=mock_sconn,
+    )
+
+    with patch(
+        "streaming.consumer.consumer.insert_sensor_events", return_value=True
+    ) as mock_insert:
+        result = consumer.process_batch([msg])
+
+    assert result.valid_count == 1
+    assert result.invalid_count == 0
+    assert result.committed is True
+    assert result.inserted_into_snowflake is True
+    mock_insert.assert_called_once()
+    mock_kconsumer.commit.assert_called_once_with(asynchronous=False)
+
+
+def test_process_batch_pure_invalid_poison_pill_batch(
+    sam_unaligned_event_dict: dict[str, Any]
+) -> None:
+    """Verifies batch of only invalid events acknowledges poison pills without DB call."""
+    mock_kconsumer = MagicMock()
+    mock_sconn = MagicMock()
+    msg1 = MockKafkaMessage("{malformed json", offset=90)
+    msg2 = MockKafkaMessage(json.dumps(sam_unaligned_event_dict), offset=91)
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=mock_sconn,
+    )
+
+    with patch("streaming.consumer.consumer.insert_sensor_events") as mock_insert:
+        result = consumer.process_batch([msg1, msg2])
+
+    assert result.valid_count == 0
+    assert result.invalid_count == 2
+    assert result.committed is True
+    assert result.inserted_into_snowflake is False
+    # No DB operations performed
+    mock_insert.assert_not_called()
+    # Committed to avoid poison pill deadlock
+    mock_kconsumer.commit.assert_called_once_with(asynchronous=False)
+
+
+def test_process_batch_kafka_offset_commit_failure(
+    valid_sensor_event_dict: dict[str, Any]
+) -> None:
+    """Verifies failure in consumer.commit() raises KafkaConsumerError."""
+    mock_kconsumer = MagicMock()
+    mock_kconsumer.commit.side_effect = Exception("Kafka commit broker timeout")
+    mock_sconn = MagicMock()
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=95)
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=mock_sconn,
+    )
+
+    with patch("streaming.consumer.consumer.insert_sensor_events", return_value=True):
+        with pytest.raises(KafkaConsumerError) as exc_info:
+            consumer.process_batch([msg])
+
+    assert "Kafka offset commit failed" in str(exc_info.value)
+
+
+def test_sanitize_raw_payload_masks_credentials() -> None:
+    """Verifies that secrets, passwords, tokens in invalid payloads are redacted."""
+    sensitive_payload = '{"container_id": "C1", "password": "SuperSecretPassword123", "token": "xyz987"}'
+    sanitized = sanitize_raw_payload(sensitive_payload)
+
+    assert "SuperSecretPassword123" not in sanitized
+    assert "xyz987" not in sanitized
+    assert "***REDACTED***" in sanitized
+
+    # Test truncation of large payload
+    large_payload = "A" * 600
+    truncated = sanitize_raw_payload(large_payload)
+    assert len(truncated) <= 520
+    assert "[truncated]" in truncated
+
+
+def test_consumer_run_loop_with_max_batches() -> None:
+    """Verifies run() processes exact max_batches and executes close()."""
+    mock_kconsumer = MagicMock()
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=MagicMock(),
+    )
+
+    with patch.object(consumer, "consume_once", return_value=MagicMock()) as mock_consume_once:
+        with patch.object(consumer, "close") as mock_close:
+            batches = consumer.run(max_batches=3)
+
+    assert batches == 3
+    assert mock_consume_once.call_count == 3
+    mock_close.assert_called_once()
+
+
+def test_consumer_run_loop_with_stop_event() -> None:
+    """Verifies run() exits immediately when stop_event is set."""
+    mock_kconsumer = MagicMock()
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(),
+        kafka_consumer=mock_kconsumer,
+        snowflake_connection=MagicMock(),
+    )
+
+    stop_event = MagicMock()
+    stop_event.is_set.return_value = True
+
+    with patch.object(consumer, "consume_once") as mock_consume_once:
+        with patch.object(consumer, "close") as mock_close:
+            batches = consumer.run(stop_event=stop_event)
+
+    assert batches == 0
+    mock_consume_once.assert_not_called()
+    mock_close.assert_called_once()
+
+
+def test_consumer_structured_logging(
+    valid_sensor_event_dict: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verifies structured logging messages are emitted across consumer lifecycle."""
+    mock_kconsumer = MagicMock()
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=110)
+
+    with caplog.at_level("INFO"):
+        consumer = SensorKafkaConsumer(
+            config=ConsumerConfig(batch_size=5),
+            kafka_consumer=mock_kconsumer,
+            snowflake_connection=MagicMock(),
+        )
+        with patch("streaming.consumer.consumer.insert_sensor_events", return_value=True):
+            consumer.process_batch([msg])
+        consumer.close()
+
+    logs = caplog.text
+    assert "Initializing SensorKafkaConsumer" in logs
+    assert "Received batch of 1 message(s) from Kafka" in logs
+    assert "Batch validation summary: 1 valid event(s), 0 invalid event(s)" in logs
+    assert "Starting Snowflake batch ingestion" in logs
+    assert "Successfully inserted 1 event(s) into Snowflake" in logs
+    assert "Kafka offset commit succeeded" in logs
+    assert "SensorKafkaConsumer shutdown complete" in logs

@@ -10,6 +10,7 @@ from .consumer import (
     ConsumerConfig,
     KafkaConsumerError,
     SensorKafkaConsumer,
+    sanitize_raw_payload,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "ConsumerConfig",
     "KafkaConsumerError",
     "SensorKafkaConsumer",
+    "sanitize_raw_payload",
 ]

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,9 +31,38 @@ except ImportError:  # pragma: no cover
 
 from shared.validation import SensorValidationError, validate_sensor_event
 from snowflake.connection import SnowflakeConnectionError, get_snowflake_connection
-from snowflake.ingestion import SnowflakeIngestionError, insert_sensor_events
+from snowflake.ingestion import (
+    RAW_SENSOR_TABLE,
+    SnowflakeIngestionError,
+    insert_sensor_events,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_raw_payload(value: Any, max_len: int = 500) -> str:
+    """
+    Safely stringifies raw payload for dead-letter diagnostics, redacting sensitive
+    credentials/secrets and truncating excessive lengths to avoid log pollution.
+    """
+    if isinstance(value, bytes):
+        text = value.decode("utf-8", errors="replace")
+    else:
+        text = str(value)
+
+    # Redact common credential patterns if present
+    for sensitive_key in ("password", "secret", "token", "api_key", "credential"):
+        if sensitive_key in text.lower():
+            text = re.sub(
+                rf'("{sensitive_key}"\s*:\s*)"[^"]*"',
+                r'\1"***REDACTED***"',
+                text,
+                flags=re.IGNORECASE,
+            )
+
+    if len(text) > max_len:
+        return text[:max_len] + "... [truncated]"
+    return text
 
 
 class KafkaConsumerError(Exception):
@@ -96,6 +126,15 @@ class SensorKafkaConsumer:
         self._external_snowflake_conn = snowflake_connection is not None
         self._snowflake_conn = snowflake_connection
 
+        logger.info(
+            "Initializing SensorKafkaConsumer: topic='%s', group_id='%s', batch_size=%d, auto_offset_reset='%s', poll_timeout=%.1fs",
+            self.config.topic,
+            self.config.group_id,
+            self.config.batch_size,
+            self.config.auto_offset_reset,
+            self.config.poll_timeout_seconds,
+        )
+
         if kafka_consumer is not None:
             self.consumer = kafka_consumer
         else:
@@ -122,9 +161,28 @@ class SensorKafkaConsumer:
                     f"Failed to initialize Kafka consumer: {exc}"
                 ) from exc
 
+    def _reset_snowflake_conn(self) -> None:
+        """
+        Safely closes and resets internally managed Snowflake connection on failure.
+        Allows the consumer to establish a fresh connection on the next batch attempt.
+        """
+        if not self._external_snowflake_conn and self._snowflake_conn is not None:
+            try:
+                self._snowflake_conn.close()
+                logger.debug("Closed stale internal Snowflake connection.")
+            except Exception as exc:
+                logger.debug("Error while closing failed Snowflake connection: %s", exc)
+            self._snowflake_conn = None
+
     def _get_snowflake_conn(self) -> Any:
+        """Retrieves active Snowflake connection, establishing a new one if not connected."""
         if self._snowflake_conn is None:
-            self._snowflake_conn = get_snowflake_connection()
+            try:
+                self._snowflake_conn = get_snowflake_connection()
+                logger.info("Established fresh Snowflake connection for batch ingestion.")
+            except Exception as exc:
+                logger.error("Failed to connect to Snowflake: %s", exc)
+                raise SnowflakeConnectionError(f"Snowflake connection failed: {exc}") from exc
         return self._snowflake_conn
 
     def deserialize_and_validate(
@@ -198,12 +256,13 @@ class SensorKafkaConsumer:
     def process_batch(self, messages: list[Any]) -> BatchIngestionResult:
         """
         Processes a list of polled Kafka messages:
-        1. Deserializes and validates each event.
-        2. Isolates invalid events with metadata for DLQ tracking.
+        1. Deserializes and validates each event against the official 7-field schema.
+        2. Isolates invalid events with sanitized metadata for DLQ tracking.
         3. Inserts valid events into Snowflake via `insert_sensor_events`.
-        4. Commits Kafka offsets ONLY if Snowflake insertion succeeds.
+        4. Commits Kafka offsets ONLY if Snowflake insertion succeeds (or if all messages are poison pills).
         """
         if not messages:
+            logger.debug("Polled empty message batch; skipping processing.")
             return BatchIngestionResult(
                 valid_count=0,
                 invalid_count=0,
@@ -212,6 +271,7 @@ class SensorKafkaConsumer:
                 invalid_records=[],
             )
 
+        logger.info("Received batch of %d message(s) from Kafka", len(messages))
         valid_tuples: list[tuple[dict[str, Any], str, int, int]] = []
         invalid_records: list[dict[str, Any]] = []
 
@@ -245,18 +305,33 @@ class SensorKafkaConsumer:
                     "partition": partition,
                     "offset": offset,
                     "error": error_msg,
-                    "raw_payload": value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value),
+                    "raw_payload": sanitize_raw_payload(value),
                 })
+
+        logger.info(
+            "Batch validation summary: %d valid event(s), %d invalid event(s)",
+            len(valid_tuples),
+            len(invalid_records),
+        )
 
         # Database Insertion & Offset Commit Decision
         inserted_into_snowflake = False
         if valid_tuples:
-            conn = self._get_snowflake_conn()
+            logger.info(
+                "Starting Snowflake batch ingestion for %d valid event(s) into %s",
+                len(valid_tuples),
+                RAW_SENSOR_TABLE,
+            )
             try:
-                # Call existing batch ingestion function
+                conn = self._get_snowflake_conn()
                 inserted_into_snowflake = insert_sensor_events(
                     events=valid_tuples,
                     connection=conn,
+                )
+                logger.info(
+                    "Successfully inserted %d event(s) into Snowflake table %s",
+                    len(valid_tuples),
+                    RAW_SENSOR_TABLE,
                 )
             except Exception as exc:
                 logger.error(
@@ -264,23 +339,33 @@ class SensorKafkaConsumer:
                     len(valid_tuples),
                     exc,
                 )
-                # Propagate exception so Kafka offsets remain uncommitted
+                self._reset_snowflake_conn()
+                if isinstance(exc, (SnowflakeConnectionError, SnowflakeIngestionError)):
+                    raise
                 raise SnowflakeIngestionError(
                     f"Snowflake batch ingestion failed: {exc}"
                 ) from exc
+        elif invalid_records:
+            logger.warning(
+                "Batch contains ONLY invalid records (%d events). Acknowledging poison pills without DB operations.",
+                len(invalid_records),
+            )
 
         # Commit Kafka offsets if insertion succeeded or if there were only invalid messages
         # (poison pill records safely handled so consumer does not hang indefinitely)
+        committed = False
         if hasattr(self.consumer, "commit") and callable(self.consumer.commit):
-            self.consumer.commit(asynchronous=False)
-            committed = True
-            logger.info(
-                "Kafka batch committed: %d valid records ingested, %d invalid records safely handled",
-                len(valid_tuples),
-                len(invalid_records),
-            )
-        else:
-            committed = False
+            try:
+                self.consumer.commit(asynchronous=False)
+                committed = True
+                logger.info(
+                    "Kafka offset commit succeeded: %d valid record(s) persisted, %d invalid record(s) safely handled",
+                    len(valid_tuples),
+                    len(invalid_records),
+                )
+            except Exception as exc:
+                logger.error("Failed to commit Kafka offsets: %s", exc)
+                raise KafkaConsumerError(f"Kafka offset commit failed: {exc}") from exc
 
         return BatchIngestionResult(
             valid_count=len(valid_tuples),
@@ -299,17 +384,56 @@ class SensorKafkaConsumer:
         messages = self.poll_messages(max_records=max_records, timeout=timeout)
         return self.process_batch(messages)
 
+    def run(
+        self,
+        max_batches: int | None = None,
+        stop_event: Any = None,
+    ) -> int:
+        """
+        Executes consumer polling loop until stopped or `max_batches` reached.
+
+        Args:
+            max_batches: Optional maximum number of batches to process.
+            stop_event: Optional threading.Event to signal graceful termination.
+
+        Returns:
+            int: Total number of batches processed.
+        """
+        logger.info("Starting SensorKafkaConsumer polling loop...")
+        batches_processed = 0
+        try:
+            while True:
+                if stop_event is not None and getattr(stop_event, "is_set", lambda: False)():
+                    logger.info("Stop event signaled. Gracefully exiting consumer loop.")
+                    break
+                if max_batches is not None and batches_processed >= max_batches:
+                    logger.info(
+                        "Reached target batch limit (%d). Exiting consumer loop.",
+                        max_batches,
+                    )
+                    break
+
+                self.consume_once()
+                batches_processed += 1
+        finally:
+            self.close()
+        return batches_processed
+
     def close(self) -> None:
-        """Closes Kafka consumer and Snowflake connection."""
+        """Closes Kafka consumer and Snowflake connection with structured logging."""
+        logger.info("Initiating SensorKafkaConsumer shutdown...")
         if hasattr(self, "consumer") and self.consumer:
             if hasattr(self.consumer, "close") and callable(self.consumer.close):
                 try:
                     self.consumer.close()
+                    logger.info("Kafka consumer connection closed.")
                 except Exception as exc:
                     logger.warning("Error closing Kafka consumer: %s", exc)
         if not self._external_snowflake_conn and self._snowflake_conn:
             try:
                 self._snowflake_conn.close()
+                logger.info("Internal Snowflake connection closed.")
             except Exception as exc:
                 logger.warning("Error closing Snowflake connection: %s", exc)
             self._snowflake_conn = None
+        logger.info("SensorKafkaConsumer shutdown complete.")
