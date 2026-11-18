@@ -10,15 +10,15 @@ This document provides a live tracking matrix of all platform components, design
 
 | Component | Owner | Directory | Code Implementation | Automated Test Coverage | Live Service Verification |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Sensor Simulator** | Sam / Roshan integration | `sensor_simulator/` | Complete (`simulator.py`) | 12 tests (`tests/test_kafka_producer.py`) | Ready for live broker |
-| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`) | 12 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
+| **Sensor Simulator** | Sam / Roshan integration | `sensor_simulator/` | Complete (`simulator.py`) | 23 shared tests (`tests/test_kafka_producer.py`) | Ready for live broker |
+| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`, `README.md`) | 23 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
 | **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 20 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
 
-**Total Automated Tests:** 91 passing offline unit and integration tests.
+**Total Automated Tests:** 102 passing offline unit and integration tests.
 
 ---
 
@@ -32,10 +32,16 @@ This document provides a live tracking matrix of all platform components, design
 - **Live Service Verification:** Fully operational standalone module; emits events directly to live Kafka producer when invoked.
 
 ### 3.2 Kafka Producer Service (`streaming/producer/`)
-- **Module:** `streaming/producer/producer.py`
+- **Module:** `streaming/producer/producer.py`, `streaming/producer/README.md`
 - **Owner:** Sam Roshan / Roshan integration
-- **Code Completion:** Complete. Uses `confluent-kafka` client with pre-send schema validation (`validate_before_send=True`), message partitioning by `container_id` key, delivery callbacks, and batch buffer flushing.
-- **Automated Testing:** Tested via mocked Kafka producer instances verifying serialization, key partitioning, pre-validation rejection, and delivery handling.
+- **Code Completion:** Complete.
+  - Uses `confluent-kafka` client with pre-send schema validation (`validate_before_send=True`) and stable `container_id` partition key routing.
+  - Broker delivery callback wrapping (`_build_delivery_callback`) tracking asynchronous `produced`, `delivered`, `delivery_failed`, `produce_failed`, `in_flight`, and `pending` counts via `ProducerStats`.
+  - Bounded retries (`max_retries`, `retry_backoff_seconds`) for transient local queue/buffer exhaustion (`BufferError`) without infinite loops or duplicate events.
+  - Fault-isolated batch publishing (`produce_batch(..., continue_on_error=True)`) so individual event failures do not crash remaining valid telemetry.
+  - Configurable flush timeout (`flush_timeout_seconds`) reporting undelivered pending records.
+  - Graceful shutdown lifecycle (`request_shutdown`, `close`, `stream_simulation`) halting new event acceptance, flushing pending buffers, and logging final statistics.
+- **Automated Testing:** 23 tests in `tests/test_kafka_producer.py` covering configuration, schema pre-validation, delivery confirmation callbacks, broker failure tracking, bounded retries, flush timeouts, mixed batch isolation, graceful shutdown, simulator physics, and end-to-end producer-consumer flow.
 - **Live Service Verification:** Requires live Kafka broker on `localhost:9092` with topic `container-sensor-data`.
 
 ### 3.3 Kafka Consumer Service (`streaming/consumer/`)
