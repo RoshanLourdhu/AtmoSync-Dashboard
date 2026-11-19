@@ -7,13 +7,19 @@ Provides Kafka producer orchestration and schema validation for IoT sensor telem
 from .producer import (
     KafkaProducerError,
     ProducerConfig,
+    ProducerConfigError,
     ProducerStats,
     SensorKafkaProducer,
+    validate_bootstrap_servers,
+    validate_topic,
 )
 
 __all__ = [
     "KafkaProducerError",
     "ProducerConfig",
+    "ProducerConfigError",
     "ProducerStats",
     "SensorKafkaProducer",
+    "validate_bootstrap_servers",
+    "validate_topic",
 ]

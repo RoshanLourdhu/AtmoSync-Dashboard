@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -34,9 +35,101 @@ from shared.validation import SensorValidationError, validate_sensor_event
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
+DEFAULT_TOPIC = "container-sensor-data"
+VALID_ACKS = {"0", "1", "all", 0, 1}
+TOPIC_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,249}$")
+
 
 class KafkaProducerError(Exception):
     """Base exception for Kafka producer operations."""
+
+
+class ProducerConfigError(KafkaProducerError, ValueError):
+    """Raised when Kafka producer configuration is missing or invalid."""
+
+
+def validate_bootstrap_servers(
+    bootstrap_servers: str | list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    """
+    Validate bootstrap_servers string or sequence of 'host:port' entries.
+
+    Args:
+        bootstrap_servers: Comma-separated string or list/tuple of broker addresses.
+
+    Returns:
+        list[str]: Cleaned list of valid 'host:port' broker strings.
+
+    Raises:
+        ProducerConfigError: If bootstrap_servers is missing, empty, malformed, or port out of range.
+    """
+    if bootstrap_servers is None:
+        raise ProducerConfigError(
+            "KAFKA_BOOTSTRAP_SERVERS is missing. Expected 'host:port' (e.g., 'localhost:9092')."
+        )
+
+    if isinstance(bootstrap_servers, str):
+        servers = [s.strip() for s in bootstrap_servers.split(",") if s.strip()]
+    elif isinstance(bootstrap_servers, (list, tuple)):
+        servers = [str(s).strip() for s in bootstrap_servers if str(s).strip()]
+    else:
+        raise ProducerConfigError(
+            f"Invalid bootstrap_servers type '{type(bootstrap_servers).__name__}'. Expected string or list."
+        )
+
+    if not servers:
+        raise ProducerConfigError(
+            "KAFKA_BOOTSTRAP_SERVERS cannot be empty. Expected 'host:port' (e.g., 'localhost:9092')."
+        )
+
+    for entry in servers:
+        if ":" not in entry:
+            raise ProducerConfigError(
+                f"Invalid bootstrap server '{entry}': missing port. Expected 'host:port'."
+            )
+        host, port_str = entry.rsplit(":", 1)
+        if not host:
+            raise ProducerConfigError(
+                f"Invalid bootstrap server '{entry}': host cannot be empty."
+            )
+        if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
+            raise ProducerConfigError(
+                f"Invalid port '{port_str}' in bootstrap server '{entry}'. Port must be between 1 and 65535."
+            )
+
+    return servers
+
+
+def validate_topic(topic: str | None) -> str:
+    """
+    Validate Kafka topic name against standard Kafka naming constraints.
+
+    Constraints:
+        - Must be non-empty string.
+        - Length between 1 and 249 characters.
+        - Cannot be '.' or '..'.
+        - Allowed characters: alphanumeric, '.', '_', '-'.
+
+    Args:
+        topic: Topic name to validate.
+
+    Returns:
+        str: Validated and stripped topic string.
+
+    Raises:
+        ProducerConfigError: If topic is invalid or violates naming constraints.
+    """
+    if not isinstance(topic, str) or not topic.strip():
+        raise ProducerConfigError(
+            "KAFKA_TOPIC is missing or empty. Expected a non-empty topic name (e.g., 'container-sensor-data')."
+        )
+    cleaned = topic.strip()
+    if cleaned in (".", "..") or not TOPIC_PATTERN.match(cleaned):
+        raise ProducerConfigError(
+            f"Invalid KAFKA_TOPIC '{cleaned}'. Use 1-249 alphanumeric characters, '.', '_', or '-'."
+        )
+    return cleaned
 
 
 @dataclass
@@ -51,6 +144,32 @@ class ProducerConfig:
     flush_timeout_seconds: float = 10.0
     max_retries: int = 3
     retry_backoff_seconds: float = 0.2
+
+    def validate(self) -> None:
+        """
+        Validate and enforce constraints on producer configuration parameters.
+
+        Raises:
+            ProducerConfigError: If any configuration value violates constraints.
+        """
+        validate_bootstrap_servers(self.bootstrap_servers)
+        validate_topic(self.topic)
+        if self.acks not in VALID_ACKS:
+            raise ProducerConfigError(
+                f"Invalid acks value '{self.acks}'. Allowed values: 0, 1, 'all'."
+            )
+        if self.max_retries < 0 or self.max_retries > 20:
+            raise ProducerConfigError(
+                f"Invalid max_retries={self.max_retries}. Must be between 0 and 20."
+            )
+        if self.flush_timeout_seconds <= 0:
+            raise ProducerConfigError(
+                f"Invalid flush_timeout_seconds={self.flush_timeout_seconds}. Must be positive."
+            )
+        if self.retry_backoff_seconds < 0:
+            raise ProducerConfigError(
+                f"Invalid retry_backoff_seconds={self.retry_backoff_seconds}. Must be non-negative."
+            )
 
     @classmethod
     def from_env(cls) -> ProducerConfig:
@@ -127,6 +246,7 @@ class SensorKafkaProducer:
         kafka_producer: Any = None,
     ) -> None:
         self.config = config or ProducerConfig.from_env()
+        self.config.validate()
         self.stats = ProducerStats()
         self._closed = False
 

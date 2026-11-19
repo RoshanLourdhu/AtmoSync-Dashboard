@@ -32,8 +32,11 @@ from streaming.consumer.consumer import SensorKafkaConsumer
 from streaming.producer.producer import (
     KafkaProducerError,
     ProducerConfig,
+    ProducerConfigError,
     ProducerStats,
     SensorKafkaProducer,
+    validate_bootstrap_servers,
+    validate_topic,
 )
 
 
@@ -701,3 +704,95 @@ def test_producer_stream_simulation_runs_exact_cycles_and_closes() -> None:
     assert mock_producer.produce.call_count == 6
     # 2 batch flushes + 1 final shutdown flush = 3 flush calls
     assert mock_producer.flush.call_count == 3
+
+
+# =====================================================================
+# Configuration Validation Tests (Integrated from Team Contributions)
+# =====================================================================
+
+
+def test_validate_bootstrap_servers_valid_formats() -> None:
+    """Tests bootstrap servers parsing with valid single and comma-separated lists."""
+    assert validate_bootstrap_servers("localhost:9092") == ["localhost:9092"]
+    assert validate_bootstrap_servers("broker1:9092, broker2:9093") == [
+        "broker1:9092",
+        "broker2:9093",
+    ]
+    assert validate_bootstrap_servers(["b1:9092", "b2:9094"]) == [
+        "b1:9092",
+        "b2:9094",
+    ]
+
+
+@pytest.mark.parametrize(
+    "invalid_input,error_substr",
+    [
+        (None, "missing"),
+        ("", "cannot be empty"),
+        ("   ", "cannot be empty"),
+        (1234, "Invalid bootstrap_servers type"),
+        ("localhost", "missing port"),
+        (":9092", "host cannot be empty"),
+        ("localhost:abc", "Invalid port"),
+        ("localhost:0", "Port must be between 1 and 65535"),
+        ("localhost:70000", "Port must be between 1 and 65535"),
+    ],
+)
+def test_validate_bootstrap_servers_invalid_inputs(
+    invalid_input: Any, error_substr: str
+) -> None:
+    """Verifies malformed bootstrap server entries raise ProducerConfigError."""
+    with pytest.raises(ProducerConfigError, match=error_substr):
+        validate_bootstrap_servers(invalid_input)
+
+
+def test_validate_topic_valid_names() -> None:
+    """Tests valid Kafka topic names conforming to naming standards."""
+    assert validate_topic("container-sensor-data") == "container-sensor-data"
+    assert validate_topic("sensor_events.test-1") == "sensor_events.test-1"
+    assert validate_topic("  clean-topic  ") == "clean-topic"
+
+
+@pytest.mark.parametrize(
+    "invalid_topic,error_substr",
+    [
+        (None, "missing or empty"),
+        ("", "missing or empty"),
+        ("   ", "missing or empty"),
+        (".", "Invalid KAFKA_TOPIC"),
+        ("..", "Invalid KAFKA_TOPIC"),
+        ("topic/with/slash", "Invalid KAFKA_TOPIC"),
+        ("topic with spaces", "Invalid KAFKA_TOPIC"),
+        ("a" * 250, "Invalid KAFKA_TOPIC"),
+    ],
+)
+def test_validate_topic_invalid_names(invalid_topic: Any, error_substr: str) -> None:
+    """Verifies invalid topic names raise ProducerConfigError."""
+    with pytest.raises(ProducerConfigError, match=error_substr):
+        validate_topic(invalid_topic)
+
+
+def test_producer_config_validation_rules() -> None:
+    """Verifies ProducerConfig.validate() enforces acks, retries, and timeouts."""
+    # Valid default config passes
+    cfg = ProducerConfig()
+    cfg.validate()
+
+    # Invalid acks
+    with pytest.raises(ProducerConfigError, match="Invalid acks"):
+        ProducerConfig(acks="invalid").validate()
+
+    # Invalid max_retries
+    with pytest.raises(ProducerConfigError, match="max_retries"):
+        ProducerConfig(max_retries=-1).validate()
+
+    # Invalid flush timeout
+    with pytest.raises(ProducerConfigError, match="flush_timeout_seconds"):
+        ProducerConfig(flush_timeout_seconds=0.0).validate()
+
+
+def test_sensor_kafka_producer_init_rejects_invalid_config() -> None:
+    """Verifies SensorKafkaProducer initialization fails fast on invalid config."""
+    invalid_cfg = ProducerConfig(bootstrap_servers="invalid_no_port")
+    with pytest.raises(ProducerConfigError, match="missing port"):
+        SensorKafkaProducer(config=invalid_cfg, kafka_producer=MagicMock())

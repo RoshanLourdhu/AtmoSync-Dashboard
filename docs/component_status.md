@@ -10,15 +10,16 @@ This document provides a live tracking matrix of all platform components, design
 
 | Component | Owner | Directory | Code Implementation | Automated Test Coverage | Live Service Verification |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Sensor Simulator** | Sam / Roshan integration | `sensor_simulator/` | Complete (`simulator.py`) | 23 shared tests (`tests/test_kafka_producer.py`) | Ready for live broker |
-| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`, `README.md`) | 23 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
+| **Sensor Simulator** | Sam / Roshan integration | `sensor_simulator/` | Complete (`simulator.py`) | 44 shared tests (`tests/test_kafka_producer.py`) | Ready for live broker |
+| **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`, `README.md`) | 44 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
 | **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 20 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
+| **Data Quality Tabular Validator** | Navya / Roshan integration | `dashboard/data_quality/` | Complete (`validator.py`, `report_generator.py`, Plotly) | 8 tests (`tests/test_data_quality_validator.py`) | Verified across 7-field & 5-field records |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
 
-**Total Automated Tests:** 102 passing offline unit and integration tests.
+**Total Automated Tests:** 131 passing offline unit and integration tests.
 
 ---
 
@@ -35,13 +36,14 @@ This document provides a live tracking matrix of all platform components, design
 - **Module:** `streaming/producer/producer.py`, `streaming/producer/README.md`
 - **Owner:** Sam Roshan / Roshan integration
 - **Code Completion:** Complete.
+  - Integrates Sam's robust bootstrap broker parsing (`validate_bootstrap_servers`) and topic naming validator (`validate_topic`), enforcing fast-fail configuration checks on startup.
   - Uses `confluent-kafka` client with pre-send schema validation (`validate_before_send=True`) and stable `container_id` partition key routing.
   - Broker delivery callback wrapping (`_build_delivery_callback`) tracking asynchronous `produced`, `delivered`, `delivery_failed`, `produce_failed`, `in_flight`, and `pending` counts via `ProducerStats`.
   - Bounded retries (`max_retries`, `retry_backoff_seconds`) for transient local queue/buffer exhaustion (`BufferError`) without infinite loops or duplicate events.
   - Fault-isolated batch publishing (`produce_batch(..., continue_on_error=True)`) so individual event failures do not crash remaining valid telemetry.
   - Configurable flush timeout (`flush_timeout_seconds`) reporting undelivered pending records.
   - Graceful shutdown lifecycle (`request_shutdown`, `close`, `stream_simulation`) halting new event acceptance, flushing pending buffers, and logging final statistics.
-- **Automated Testing:** 23 tests in `tests/test_kafka_producer.py` covering configuration, schema pre-validation, delivery confirmation callbacks, broker failure tracking, bounded retries, flush timeouts, mixed batch isolation, graceful shutdown, simulator physics, and end-to-end producer-consumer flow.
+- **Automated Testing:** 44 tests in `tests/test_kafka_producer.py` covering broker address validation, topic naming constraints, configuration rules, schema pre-validation, delivery confirmation callbacks, broker failure tracking, bounded retries, flush timeouts, mixed batch isolation, graceful shutdown, simulator physics, and end-to-end producer-consumer flow.
 - **Live Service Verification:** Requires live Kafka broker on `localhost:9092` with topic `container-sensor-data`.
 
 ### 3.3 Kafka Consumer Service (`streaming/consumer/`)
@@ -90,6 +92,7 @@ This document provides a live tracking matrix of all platform components, design
 - **Stack:** `dashboard/docker-compose.yml`, `dashboard/config/superset_config.py`
 - **Owner:** Navya (BI & Dashboard Lead), Roshan (Integration & Data Quality)
 - **Code Completion:** Complete.
+  - Resolves Navya's `docs/superset_readiness_audit.md` with explicit schema mappings, SQL metric formulas, and Snowflake driver packages.
   - Containerized environment (PostgreSQL 13, Redis 6, Superset latest).
   - Snowflake SQLAlchemy driver included in `requirements-local.txt`.
   - Dataset specifications for 4 tables (`STG_SENSOR_READINGS`, `FCT_SPOILAGE_RISK`, `FCT_ARBITRAGE_OPPORTUNITIES`, `FCT_SENSOR_DATA_QUALITY`).
@@ -98,6 +101,17 @@ This document provides a live tracking matrix of all platform components, design
   - Native dashboard filter definitions (`Date Range`, `Container ID`, `Commodity`, `Quality Status`).
 - **Automated Testing:** 7 tests in `tests/test_dbt_and_dashboard_integration.py` verifying Compose service dependencies, healthchecks, driver requirements, calculated metric formulas, data quality datasets, chart definitions, and filter configurations.
 - **Live Service Verification:** Requires starting Docker containers (`docker compose up -d`), connecting to live Snowflake database, and assembling dashboard tiles in the UI.
+
+### 3.8 Tabular Data Quality Validation & Reporting Suite (`dashboard/data_quality/`)
+- **Modules:** `dashboard/data_quality/validator.py`, `dashboard/data_quality/report_generator.py`, `dashboard/data_quality/visualizations/quality_dashboard.py`
+- **Owner:** Navya (Data Quality & BI visualization), Roshan (Contract alignment & robust scoring)
+- **Code Completion:** Complete.
+  - Pure Python validator enforcing 7-field schema contract with backward compatibility for Navya's 5-field baseline.
+  - Detects missing columns, nulls, duplicate keys `(container_id, timestamp)`, unparseable timestamps, invalid numeric values, humidity excursion beyond [0, 100], and statistical IQR outliers (1.5 * IQR).
+  - Calculates composite quality score (0-100%) and serializes to formatted JSON report (`data_quality_report.json`).
+  - Optional Plotly dashboard visualization generator (`quality_dashboard.py`) with gauge indicators and issue breakdown bars.
+- **Automated Testing:** 8 tests in `tests/test_data_quality_validator.py` testing clean data, missing columns, duplicates, timestamp coercion, numeric handling, IQR outliers, score penalization, and JSON export.
+- **Live Service Verification:** Complete and self-contained; runs in batch ETL or interactive CLI.
 
 ---
 

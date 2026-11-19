@@ -1,0 +1,15 @@
+{
+    "total_records": 4,
+    "quality_score": 85.0,
+    "missing_values": 0,
+    "duplicate_records": 1,
+    "invalid_timestamps": 1,
+    "invalid_numeric_values": 0,
+    "invalid_humidity_records": 1,
+    "outliers": {
+        "temperature": 1,
+        "humidity": 1,
+        "vibration": 0
+    },
+    "validation_status": "Completed"
+}
