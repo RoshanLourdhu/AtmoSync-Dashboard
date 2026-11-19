@@ -3,7 +3,7 @@ import os
 import re
 from datetime import datetime, timezone
 from kafka import KafkaProducer
-from kafka.errors import KafkaError, NoBrokersAvailable
+from kafka.errors import KafkaError, KafkaTimeoutError, NoBrokersAvailable
 
 DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
 DEFAULT_TOPIC = "atmosync_sensor_events"
@@ -13,6 +13,10 @@ TOPIC_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,249}$")
 
 class ProducerConfigError(ValueError):
     """Raised when Kafka producer configuration is missing or invalid."""
+
+
+class ProducerDeliveryError(RuntimeError):
+    """Raised when an event fails to be delivered to Kafka."""
 
 
 def validate_bootstrap_servers(bootstrap_servers):
@@ -158,6 +162,63 @@ def create_producer(config=None, producer_cls=KafkaProducer):
         ) from exc
 
 
+def on_send_success(record_metadata, event_id="UNKNOWN"):
+    """Callback invoked when Kafka acknowledges record delivery."""
+    print(
+        f"[DELIVERY ACK] event_id={event_id} topic='{record_metadata.topic}' "
+        f"partition={record_metadata.partition} offset={record_metadata.offset}"
+    )
+
+
+def on_send_error(exc, event_id="UNKNOWN", topic="UNKNOWN"):
+    """Callback invoked when asynchronous record delivery fails."""
+    print(
+        f"[DELIVERY ERROR] event_id={event_id} topic='{topic}' "
+        f"error_type={type(exc).__name__} detail={exc}"
+    )
+
+
+def send_event(producer, topic, event, timeout=10, on_success=on_send_success, on_error=on_send_error):
+    """Publish a telemetry event with delivery callbacks and structured failure reporting."""
+    if not isinstance(event, dict):
+        raise ValueError("Event payload must be a dictionary.")
+
+    event_id = event.get("event_id", "UNKNOWN")
+    key = event.get("container_id")
+
+    try:
+        future = producer.send(topic, key=key, value=event)
+        future.add_callback(lambda meta: on_success(meta, event_id=event_id))
+        future.add_errback(lambda exc: on_error(exc, event_id=event_id, topic=topic))
+        metadata = future.get(timeout=timeout)
+        return metadata
+    except KafkaTimeoutError as exc:
+        on_error(exc, event_id=event_id, topic=topic)
+        raise ProducerDeliveryError(
+            f"Delivery timed out after {timeout}s for event_id={event_id} on topic='{topic}'."
+        ) from exc
+    except KafkaError as exc:
+        on_error(exc, event_id=event_id, topic=topic)
+        raise ProducerDeliveryError(
+            f"Kafka delivery failed for event_id={event_id} on topic='{topic}': {exc}"
+        ) from exc
+
+
+def close_producer(producer, timeout=10):
+    """Flush pending records and safely close the producer instance."""
+    if producer is None:
+        return
+    try:
+        producer.flush(timeout=timeout)
+    except KafkaError as exc:
+        print(f"[PRODUCER FLUSH ERROR] {exc}")
+    finally:
+        try:
+            producer.close(timeout=timeout)
+        except KafkaError as exc:
+            print(f"[PRODUCER CLOSE ERROR] {exc}")
+
+
 def build_sample_event():
     return {
         "event_id": "EV000001",
@@ -180,29 +241,15 @@ def main():
     try:
         producer, cfg = create_producer()
         event = build_sample_event()
-        future = producer.send(cfg["topic"], key=event["container_id"], value=event)
-        metadata = future.get(timeout=10)
-        print(
-            f"[PRODUCER SENT] {event['event_id']} -> topic='{metadata.topic}' "
-            f"partition={metadata.partition} offset={metadata.offset}"
-        )
+        send_event(producer, cfg["topic"], event, timeout=10)
     except ProducerConfigError as exc:
         print(f"[CONFIG ERROR] {exc}")
         raise SystemExit(1) from exc
-    except (RuntimeError, KafkaError) as exc:
+    except (RuntimeError, ProducerDeliveryError, KafkaError) as exc:
         print(f"{exc}")
         raise SystemExit(1) from exc
     finally:
-        if producer is not None:
-            try:
-                producer.flush(timeout=10)
-            except KafkaError as exc:
-                print(f"[PRODUCER FLUSH ERROR] {exc}")
-            finally:
-                try:
-                    producer.close(timeout=10)
-                except KafkaError as exc:
-                    print(f"[PRODUCER CLOSE ERROR] {exc}")
+        close_producer(producer, timeout=10)
 
 
 if __name__ == "__main__":
