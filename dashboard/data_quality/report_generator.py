@@ -36,7 +36,14 @@ def generate_quality_report(
         return validation
 
     total_records = validation.get("total_records", 0)
-    missing_count = sum(validation.get("missing_values", {}).values())
+    # Count original missing values and also treat non‑numeric conversions as missing
+    numeric_invalid = sum(validation["invalid_numeric_values"].values())
+    missing_count = sum(
+        validation["missing_values"].values()
+    ) + numeric_invalid
+    # Reflect the combined count in the report
+    validation["missing_values"] = missing_count
+
     duplicate_count = validation.get("duplicate_records", 0)
     invalid_timestamps = validation.get("invalid_timestamps", 0)
     invalid_humidity = validation.get("invalid_humidity_records", 0)
@@ -150,4 +157,3 @@ if __name__ == "__main__":
     print("\n===== ATMOSYNC DATA QUALITY SUMMARY =====")
     for key, value in report.items():
         print(f"{key}: {value}")
-    print(f"\nReport written to: {report_path}")
