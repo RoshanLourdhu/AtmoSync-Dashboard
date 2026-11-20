@@ -14,12 +14,13 @@ This document provides a live tracking matrix of all platform components, design
 | **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`, `README.md`) | 44 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
 | **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 20 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
-| **Data Quality Tabular Validator** | Navya / Roshan integration | `dashboard/data_quality/` | Complete (`validator.py`, `report_generator.py`, Plotly) | 8 tests (`tests/test_data_quality_validator.py`) | Verified across 7-field & 5-field records |
+| **Data Quality & Filter Validator** | Navya / Roshan integration | `dashboard/data_quality/` | Complete (`validator.py`, `filter_validator.py`, Plotly) | 15 tests (`tests/test_data_quality_*.py`, `test_filter_*.py`) | Verified across 7-field records & dashboard filters |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
+| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`test_pipeline_e2e_integration.py`, `verify_pipeline_e2e.py`) | 2 tests (`tests/test_pipeline_e2e_integration.py`) | Verified through automated multi-stage contract runner |
 
-**Total Automated Tests:** 131 passing offline unit and integration tests.
+**Total Automated Tests:** 140 passing offline unit and integration tests.
 
 ---
 
@@ -102,16 +103,26 @@ This document provides a live tracking matrix of all platform components, design
 - **Automated Testing:** 7 tests in `tests/test_dbt_and_dashboard_integration.py` verifying Compose service dependencies, healthchecks, driver requirements, calculated metric formulas, data quality datasets, chart definitions, and filter configurations.
 - **Live Service Verification:** Requires starting Docker containers (`docker compose up -d`), connecting to live Snowflake database, and assembling dashboard tiles in the UI.
 
-### 3.8 Tabular Data Quality Validation & Reporting Suite (`dashboard/data_quality/`)
-- **Modules:** `dashboard/data_quality/validator.py`, `dashboard/data_quality/report_generator.py`, `dashboard/data_quality/visualizations/quality_dashboard.py`
+### 3.8 Tabular Data Quality & Dashboard Filter Suite (`dashboard/data_quality/`)
+- **Modules:** `dashboard/data_quality/validator.py`, `dashboard/data_quality/report_generator.py`, `dashboard/data_quality/filter_validator.py`, `dashboard/data_quality/visualizations/quality_dashboard.py`
 - **Owner:** Navya (Data Quality & BI visualization), Roshan (Contract alignment & robust scoring)
 - **Code Completion:** Complete.
   - Pure Python validator enforcing 7-field schema contract with backward compatibility for Navya's 5-field baseline.
   - Detects missing columns, nulls, duplicate keys `(container_id, timestamp)`, unparseable timestamps, invalid numeric values, humidity excursion beyond [0, 100], and statistical IQR outliers (1.5 * IQR).
   - Calculates composite quality score (0-100%) and serializes to formatted JSON report (`data_quality_report.json`).
+  - Integrated Navya's `filter_validator.py` verifying that dashboard filter targets and column mappings match actual upstream dataset columns.
   - Optional Plotly dashboard visualization generator (`quality_dashboard.py`) with gauge indicators and issue breakdown bars.
-- **Automated Testing:** 8 tests in `tests/test_data_quality_validator.py` testing clean data, missing columns, duplicates, timestamp coercion, numeric handling, IQR outliers, score penalization, and JSON export.
+- **Automated Testing:** 15 tests across `tests/test_data_quality_validator.py` (8 tests) and `tests/test_filter_validator.py` (7 tests) testing clean data, missing columns, duplicates, timestamp coercion, numeric handling, IQR outliers, score penalization, JSON export, and dashboard filter configurations.
 - **Live Service Verification:** Complete and self-contained; runs in batch ETL or interactive CLI.
+
+### 3.9 End-to-End Pipeline Verification Suite (`scripts/` & `tests/`)
+- **Modules:** `scripts/verify_pipeline_e2e.py`, `tests/test_pipeline_e2e_integration.py`
+- **Owner:** Roshan
+- **Code Completion:** Complete.
+  - Deterministic multi-stage contract verification chaining Simulator → Producer → Consumer → Snowflake RAW → dbt Staging → dbt Marts → Superset filter semantics.
+  - CLI verification runner (`scripts/verify_pipeline_e2e.py`) probing live service connectivity (Kafka socket, Snowflake credentials, Docker engine) and executing contract audits with clear status reporting.
+- **Automated Testing:** 2 tests in `tests/test_pipeline_e2e_integration.py` asserting the entire multi-stage flow and exception exports.
+- **Live Service Verification:** CLI probe ready; reports exact infrastructure readiness and blockers.
 
 ---
 

@@ -3,11 +3,12 @@
 ## Current state
 
 Interfaces in this guide have been fully implemented, integrated, and validated across the pipeline on branch `roshan`:
-- **Sensor Simulator & Kafka Producer:** Continuous physics walk, anomaly injection, and strict JSON Schema validation. Integrated Sam's robust broker parsing (`validate_bootstrap_servers`) and topic naming constraints (`validate_topic`).
+- **Sensor Simulator & Kafka Producer:** Continuous physics walk, anomaly injection, and strict JSON Schema validation. Integrated Sam's robust broker parsing (`validate_bootstrap_servers`), topic naming constraints (`validate_topic`), and delivery exceptions (`ProducerDeliveryError`).
 - **Kafka Consumer & Ingestion:** Resilient batch ingestion into Snowflake RAW (`ATMOSYNC_DB.RAW.SENSOR_READINGS_RAW`), transactional rollback, dead-letter quarantine, and strict offset commit safety.
 - **dbt Analytics & Quality Monitoring:** Models implemented for `stg_sensor_readings`, `fct_spoilage_risk`, `fct_arbitrage_readiness`, and `fct_sensor_data_quality`.
-- **Superset Dashboard Stack & Data Quality:** Declarative dataset/chart specifications in `dashboard/dashboards/datasets_and_charts.yaml`, containerized docker compose stack, and standalone data quality suite in `dashboard/data_quality/` with Plotly visualization.
-- **Automated Test Suite:** 131 passing automated tests across the codebase.
+- **Superset Dashboard Stack & Data Quality:** Declarative dataset/chart specifications in `dashboard/dashboards/datasets_and_charts.yaml`, containerized docker compose stack, standalone data quality suite with Plotly visualization, and dashboard filter validator (`filter_validator.py`).
+- **End-to-End Pipeline Verification Tooling:** Multi-stage pipeline validation test suite and CLI runner `scripts/verify_pipeline_e2e.py` for infrastructure probes and contract compliance audits.
+- **Automated Test Suite:** 140 passing automated tests across the codebase.
 
 Remote branches present on `origin` are `main`, `roshan`, `sam-roshan`, `nisha`, and `navya`. Consolidated integration work is maintained on `roshan`.
 

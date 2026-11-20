@@ -49,6 +49,10 @@ class ProducerConfigError(KafkaProducerError, ValueError):
     """Raised when Kafka producer configuration is missing or invalid."""
 
 
+class ProducerDeliveryError(KafkaProducerError, RuntimeError):
+    """Raised when a sensor event fails broker delivery or delivery callback reports an error."""
+
+
 def validate_bootstrap_servers(
     bootstrap_servers: str | list[str] | tuple[str, ...] | None,
 ) -> list[str]:
