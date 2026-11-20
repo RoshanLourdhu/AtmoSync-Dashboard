@@ -195,3 +195,30 @@ Therefore, the dashboard's dataset and column mapping readiness remains pending 
 
 
 This audit records the current findings without assuming that unverified dashboard functionality has been implemented.
+
+
+---
+
+## 10. Engineering Resolution & Implementation (Updated November 20, 2026)
+
+Following this audit, the BI and Dashboard development team has addressed and resolved each pending dependency identified in Sections 4, 7, and 8:
+
+### 10.1 Schema Contract Finalization
+- The upstream telemetry schema has been confirmed as the official 7-field contract: `container_id`, `shipment_id`, `commodity`, `temperature`, `humidity`, `vibration`, `timestamp`.
+- The data quality validator (`dashboard/data_quality/validator.py`) has been upgraded to enforce this 7-field contract while retaining backward compatibility for the legacy 5-field baseline.
+
+### 10.2 Declarative Superset Dataset & Chart Specification
+- Authored `dashboard/dashboards/datasets_and_charts.yaml` establishing explicit semantic layers:
+  - `STG_SENSOR_READINGS`: Unpacked telemetry time series.
+  - `FCT_SPOILAGE_RISK`: Thermal excursion duration and composite spoilage scores.
+  - `FCT_ARBITRAGE_OPPORTUNITIES`: Operational status and rerouting candidate flags.
+  - `FCT_SENSOR_DATA_QUALITY`: Audit mart with tri-state status (`PASS`, `WARNING`, `FAIL`).
+- Defined 15 calculated KPI metrics and 15 chart slice specifications.
+- Defined 4 dashboard filters (`Date Range`, `Container ID`, `Commodity`, `Quality Status`) verified against dataset columns.
+
+### 10.3 Automated Filter Configuration Validation
+- Implemented `dashboard/data_quality/filter_validator.py` (`validate_filter_configuration`) to ensure all declared filters map to valid dataset columns and target components.
+
+### 10.4 Snowflake SQLAlchemy Driver Integration
+- Added `snowflake-sqlalchemy` and `snowflake-connector-python` to `dashboard/requirements-local.txt`.
+- Documented Snowflake connection strings in `dashboard/.env.example`.

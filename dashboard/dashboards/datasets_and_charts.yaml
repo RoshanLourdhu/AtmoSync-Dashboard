@@ -1,0 +1,233 @@
+# AtmoSync Superset Datasets and KPI Metrics Specification
+# Defines semantic layers and charts derived from dbt analytical models.
+
+database_name: "AtmoSync Snowflake"
+
+datasets:
+  - table_name: "STG_SENSOR_READINGS"
+    schema: "STAGING"
+    description: "Raw validated container sensor time-series telemetry."
+    metrics:
+      - metric_name: "avg_temperature"
+        verbose_name: "Average Temperature (°C)"
+        expression: "AVG(temperature)"
+      - metric_name: "max_temperature"
+        verbose_name: "Maximum Temperature (°C)"
+        expression: "MAX(temperature)"
+      - metric_name: "avg_humidity"
+        verbose_name: "Average Humidity (%)"
+        expression: "AVG(humidity)"
+      - metric_name: "max_humidity"
+        verbose_name: "Maximum Humidity (%)"
+        expression: "MAX(humidity)"
+      - metric_name: "vibration_index"
+        verbose_name: "Vibration Index (RMS)"
+        expression: "SQRT(AVG(vibration * vibration))"
+      - metric_name: "total_readings"
+        verbose_name: "Total Telemetry Events"
+        expression: "COUNT(*)"
+
+  - table_name: "FCT_SPOILAGE_RISK"
+    schema: "MARTS"
+    description: "Container risk scores and classification based on thermal and environmental thresholds."
+    metrics:
+      - metric_name: "critical_container_count"
+        verbose_name: "Critical Containers Count"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level = 'CRITICAL' THEN container_id END)"
+      - metric_name: "warning_container_count"
+        verbose_name: "Warning Containers Count"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level = 'WARNING' THEN container_id END)"
+      - metric_name: "at_risk_container_count"
+        verbose_name: "Total At-Risk Containers"
+        expression: "COUNT(DISTINCT CASE WHEN risk_level IN ('CRITICAL', 'WARNING') THEN container_id END)"
+      - metric_name: "avg_spoilage_score"
+        verbose_name: "Average Spoilage Score"
+        expression: "AVG(spoilage_score)"
+
+  - table_name: "FCT_ARBITRAGE_OPPORTUNITIES"
+    schema: "MARTS"
+    description: "Latest operational container status and rerouting candidate flags."
+    metrics:
+      - metric_name: "reroute_candidates_count"
+        verbose_name: "Containers Needing Rerouting"
+        expression: "COUNT(DISTINCT CASE WHEN is_reroute_candidate = TRUE THEN container_id END)"
+
+  - table_name: "FCT_SENSOR_DATA_QUALITY"
+    schema: "MARTS"
+    description: "Audit and data-quality profiling mart classifying raw sensor events into PASS, WARNING, or FAIL with granular anomaly flags and issue reasons."
+    columns:
+      - name: "container_id"
+        type: "STRING"
+        description: "Monitored container identifier."
+      - name: "shipment_id"
+        type: "STRING"
+        description: "Monitored shipment identifier."
+      - name: "commodity"
+        type: "STRING"
+        description: "Perishable commodity category (Avocados, Mangoes, Bananas)."
+      - name: "temperature"
+        type: "FLOAT"
+        description: "Unpacked temperature in Celsius."
+      - name: "humidity"
+        type: "FLOAT"
+        description: "Unpacked relative humidity percentage."
+      - name: "vibration"
+        type: "FLOAT"
+        description: "Unpacked vibration acceleration in g."
+      - name: "recorded_at"
+        type: "TIMESTAMP_TZ"
+        description: "RFC 3339 event recording timestamp."
+      - name: "quality_status"
+        type: "STRING"
+        description: "Tri-state quality classification: PASS, WARNING, or FAIL."
+      - name: "quality_issue_reasons"
+        type: "STRING"
+        description: "Semicolon-delimited list of detected schema or physical violations."
+    metrics:
+      - metric_name: "total_sensor_readings"
+        verbose_name: "Total Sensor Readings Evaluated"
+        expression: "COUNT(*)"
+      - metric_name: "pass_readings_count"
+        verbose_name: "Conforming Readings Count (PASS)"
+        expression: "COUNT(CASE WHEN quality_status = 'PASS' THEN 1 END)"
+      - metric_name: "warning_readings_count"
+        verbose_name: "Suspect Readings Count (WARNING)"
+        expression: "COUNT(CASE WHEN quality_status = 'WARNING' THEN 1 END)"
+      - metric_name: "fail_readings_count"
+        verbose_name: "Corrupt Readings Count (FAIL)"
+        expression: "COUNT(CASE WHEN quality_status = 'FAIL' THEN 1 END)"
+      - metric_name: "data_quality_score_pct"
+        verbose_name: "Platform Data Quality Score (%)"
+        expression: "ROUND(100.0 * COUNT(CASE WHEN quality_status = 'PASS' THEN 1 END) / NULLIF(COUNT(*), 0), 2)"
+      - metric_name: "data_failure_rate_pct"
+        verbose_name: "Data Failure Rate (%)"
+        expression: "ROUND(100.0 * COUNT(CASE WHEN quality_status = 'FAIL' THEN 1 END) / NULLIF(COUNT(*), 0), 2)"
+      - metric_name: "anomaly_rate_pct"
+        verbose_name: "Suspect or Corrupt Anomaly Rate (%)"
+        expression: "ROUND(100.0 * COUNT(CASE WHEN quality_status != 'PASS' THEN 1 END) / NULLIF(COUNT(*), 0), 2)"
+      - metric_name: "at_risk_containers_quality_count"
+        verbose_name: "Containers with Quality Issues"
+        expression: "COUNT(DISTINCT CASE WHEN quality_status != 'PASS' THEN container_id END)"
+      - metric_name: "quality_issue_records_count"
+        verbose_name: "Total Records with Reported Issues"
+        expression: "COUNT(CASE WHEN quality_issue_reasons IS NOT NULL THEN 1 END)"
+
+charts:
+  - slice_name: "Average Temperature by Commodity"
+    viz_type: "echarts_timeseries_line"
+    dataset: "STG_SENSOR_READINGS"
+    time_column: "recorded_at"
+    dimensions: ["commodity"]
+    metrics: ["avg_temperature"]
+
+  - slice_name: "Max Humidity by Container"
+    viz_type: "echarts_bar"
+    dataset: "STG_SENSOR_READINGS"
+    dimensions: ["container_id"]
+    metrics: ["max_humidity"]
+
+  - slice_name: "Vibration Index by Container"
+    viz_type: "echarts_bar"
+    dataset: "STG_SENSOR_READINGS"
+    dimensions: ["container_id"]
+    metrics: ["vibration_index"]
+
+  - slice_name: "Containers at Spoilage Risk"
+    viz_type: "pie"
+    dataset: "FCT_SPOILAGE_RISK"
+    dimensions: ["risk_level"]
+    metrics: ["COUNT(*)"]
+
+  - slice_name: "Spoilage Risk Gauge"
+    viz_type: "gauge"
+    dataset: "FCT_SPOILAGE_RISK"
+    metrics: ["avg_spoilage_score"]
+
+  - slice_name: "Reroute Candidates Table"
+    viz_type: "table"
+    dataset: "FCT_ARBITRAGE_OPPORTUNITIES"
+    columns:
+      - "container_id"
+      - "commodity"
+      - "current_location"
+      - "destination"
+      - "spoilage_score"
+      - "is_reroute_candidate"
+      - "logistics_action_recommendation"
+
+  # Data Quality Monitoring Visualizations
+  - slice_name: "Data Quality Status Distribution"
+    viz_type: "pie"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    dimensions: ["quality_status"]
+    metrics: ["COUNT(*)"]
+
+  - slice_name: "Data Quality Trend over Time"
+    viz_type: "echarts_timeseries_line"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    time_column: "recorded_at"
+    dimensions: ["quality_status"]
+    metrics: ["COUNT(*)"]
+
+  - slice_name: "Most Frequent Quality Issue Reasons"
+    viz_type: "echarts_bar"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    dimensions: ["quality_issue_reasons"]
+    metrics: ["quality_issue_records_count"]
+
+  - slice_name: "Container-wise Quality Status Breakdown"
+    viz_type: "echarts_bar"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    dimensions: ["container_id", "quality_status"]
+    metrics: ["COUNT(*)"]
+
+  - slice_name: "Commodity-wise Quality Status Breakdown"
+    viz_type: "echarts_bar"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    dimensions: ["commodity", "quality_status"]
+    metrics: ["COUNT(*)"]
+
+  - slice_name: "Sensor Anomaly Audit Log"
+    viz_type: "table"
+    dataset: "FCT_SENSOR_DATA_QUALITY"
+    columns:
+      - "container_id"
+      - "shipment_id"
+      - "commodity"
+      - "recorded_at"
+      - "temperature"
+      - "humidity"
+      - "vibration"
+      - "quality_status"
+      - "quality_issue_reasons"
+
+filters:
+  - filter_name: "Date Range"
+    column: "recorded_at"
+    filter_type: "time_range"
+    targets:
+      - "STG_SENSOR_READINGS"
+      - "FCT_SPOILAGE_RISK"
+      - "FCT_ARBITRAGE_OPPORTUNITIES"
+      - "FCT_SENSOR_DATA_QUALITY"
+  - filter_name: "Container ID"
+    column: "container_id"
+    filter_type: "select"
+    targets:
+      - "STG_SENSOR_READINGS"
+      - "FCT_SPOILAGE_RISK"
+      - "FCT_ARBITRAGE_OPPORTUNITIES"
+      - "FCT_SENSOR_DATA_QUALITY"
+  - filter_name: "Commodity"
+    column: "commodity"
+    filter_type: "select"
+    targets:
+      - "STG_SENSOR_READINGS"
+      - "FCT_SPOILAGE_RISK"
+      - "FCT_ARBITRAGE_OPPORTUNITIES"
+      - "FCT_SENSOR_DATA_QUALITY"
+  - filter_name: "Quality Status"
+    column: "quality_status"
+    filter_type: "select"
+    targets:
+      - "FCT_SENSOR_DATA_QUALITY"
