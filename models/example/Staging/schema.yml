@@ -88,3 +88,29 @@ models:
         description: "Available quantity"
         data_tests:
           - not_null
+  
+  - name: fct_commodity_condition
+    description: "Commodity price and stock condition model"
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity identifier"
+        data_tests:
+          - not_null
+
+      - name: PRICE_STATUS
+        description: "Price category based on commodity price"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['High Price', 'Medium Price', 'Low Price']
+
+      - name: STOCK_STATUS
+        description: "Stock availability based on quantity"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Low Stock', 'Medium Stock', 'Available Stock']
+        
+
