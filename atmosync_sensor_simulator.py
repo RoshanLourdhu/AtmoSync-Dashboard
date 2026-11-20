@@ -3,12 +3,20 @@ import json
 import random
 import time
 from datetime import datetime, timezone
-from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
-KAFKA_TOPIC = "atmosync_sensor_events"
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+from kafka_producer import (
+    DEFAULT_BOOTSTRAP_SERVERS,
+    DEFAULT_TOPIC,
+    ProducerConfigError,
+    ProducerDeliveryError,
+    close_producer,
+    create_producer,
+    send_event,
+)
 
+KAFKA_TOPIC = DEFAULT_TOPIC
+KAFKA_BOOTSTRAP_SERVERS = DEFAULT_BOOTSTRAP_SERVERS
 CONTAINERS = [
     {
         "container_id": "C001",
@@ -208,21 +216,21 @@ def generate_event(
     }
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="AtmoSync IoT Cold-Chain Sensor Simulator"
+        description="AtmoSync Cold-Chain IoT Sensor Telemetry Simulator"
     )
     parser.add_argument(
         "--scenario",
-        choices=["random", "cooling_failure", "door_open", "rough_transit", "sensor_dropout"],
-        default="random",
-        help="Force a specific abnormal scenario or use random injection (default: random)",
+        choices=["AUTO", "NONE", "COOLING_FAILURE", "DOOR_OPEN", "ROUGH_TRANSIT", "SENSOR_DROPOUT"],
+        default="AUTO",
+        help="Force a specific anomaly scenario or use AUTO for random anomalies (default: AUTO)",
     )
     parser.add_argument(
         "--container",
         choices=["ALL", "C001", "C002", "C003"],
         default="ALL",
-        help="Target container for scenario injection (default: ALL)",
+        help="Target container for forced scenarios (default: ALL)",
     )
     parser.add_argument(
         "--anomaly-rate",
@@ -233,79 +241,94 @@ def parse_args():
     parser.add_argument(
         "--interval",
         type=float,
-        default=2.0,
-        help="Seconds between events (default: 2.0)",
+        default=1.0,
+        help="Seconds to sleep between container telemetry batches (default: 1.0)",
     )
     parser.add_argument(
         "--max-events",
         type=int,
         default=0,
-        help="Stop after N events; 0 runs continuously (default: 0)",
+        help="Stop after publishing N events; 0 runs continuously (default: 0)",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate and print events locally without connecting to Kafka",
+    )
+    parser.add_argument(
+        "--bootstrap-servers",
+        default=KAFKA_BOOTSTRAP_SERVERS,
+        help=f"Kafka bootstrap servers (default: {KAFKA_BOOTSTRAP_SERVERS})",
+    )
+    parser.add_argument(
+        "--topic",
+        default=KAFKA_TOPIC,
+        help=f"Kafka target topic (default: {KAFKA_TOPIC})",
+    )
+    return parser.parse_args(argv)
 
 
-def main():
-    args = parse_args()
-    forced = None if args.scenario == "random" else args.scenario.upper()
-    producer = None
-    event_counter = 1
+def run_simulator(args, producer=None):
+    """Execute the telemetry simulation loop using validated kafka_producer helpers."""
+    owns_producer = False
+    topic = args.topic
+
+    if not args.dry_run and producer is None:
+        producer, cfg = create_producer(
+            {
+                "bootstrap_servers": args.bootstrap_servers,
+                "topic": args.topic,
+            }
+        )
+        topic = cfg["topic"]
+        owns_producer = True
+
+    forced = None if args.scenario == "AUTO" else args.scenario
+    event_counter = 0
 
     try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-            key_serializer=lambda k: k.encode("utf-8"),
-            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-            acks="all",
-        )
-        print(
-            f"Streaming telemetry to '{KAFKA_TOPIC}' "
-            f"(scenario={args.scenario}, target={args.container})..."
-        )
+        while True:
+            for container in CONTAINERS:
+                if args.max_events > 0 and event_counter >= args.max_events:
+                    return event_counter
 
-        while args.max_events == 0 or event_counter <= args.max_events:
-            container = CONTAINERS[(event_counter - 1) % len(CONTAINERS)]
-            event = generate_event(
-                container,
-                event_counter,
-                forced_scenario=forced,
-                target_container=args.container,
-                anomaly_rate=args.anomaly_rate,
-            )
-            try:
-                producer.send(
-                    KAFKA_TOPIC,
-                    key=event["container_id"],
-                    value=event,
+                event_counter += 1
+                event = generate_event(
+                    container,
+                    event_counter,
+                    forced_scenario=forced,
+                    target_container=args.container,
+                    anomaly_rate=args.anomaly_rate,
                 )
-                print(
-                    f"[{event['sensor_status']:<7}] {event['event_id']} | "
-                    f"{event['container_id']} | Temp: {event['temperature_c']}C | "
-                    f"Hum: {event['humidity_pct']}% | Vib: {event['vibration_g']}g | "
-                    f"Scenario: {event['anomaly_type']}"
-                )
-            except KafkaError as exc:
-                print(f"Kafka send failed for {event['event_id']}: {exc}")
 
-            event_counter += 1
-            if args.max_events == 0 or event_counter <= args.max_events:
+                if args.dry_run:
+                    print(f"[DRY RUN] {json.dumps(event)}")
+                else:
+                    send_event(producer, topic, event, timeout=10)
+
+            if args.max_events > 0 and event_counter >= args.max_events:
+                return event_counter
+
+            if args.interval > 0:
                 time.sleep(args.interval)
-
     except KeyboardInterrupt:
-        print("\nSimulator stopped.")
-    except KafkaError as exc:
-        print(f"Kafka connection failed: {exc}")
+        print(f"\n[SIMULATOR STOPPED] Published {event_counter} events.")
+        return event_counter
     finally:
-        if producer is not None:
-            try:
-                producer.flush(timeout=10)
-            except KafkaError as exc:
-                print(f"Kafka flush failed: {exc}")
-            finally:
-                try:
-                    producer.close(timeout=10)
-                except KafkaError as exc:
-                    print(f"Kafka close failed: {exc}")
+        if owns_producer and producer is not None:
+            close_producer(producer, timeout=10)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    try:
+        run_simulator(args)
+    except ProducerConfigError as exc:
+        print(f"[SIMULATOR CONFIG ERROR] {exc}")
+        raise SystemExit(1) from exc
+    except (RuntimeError, ProducerDeliveryError, KafkaError) as exc:
+        print(f"[SIMULATOR RUNTIME ERROR] {exc}")
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
