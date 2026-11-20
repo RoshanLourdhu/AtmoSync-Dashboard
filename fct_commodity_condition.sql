@@ -1,12 +1,9 @@
 WITH commodity AS (
-
     SELECT *
     FROM {{ ref('stg_commodity') }}
-
 ),
 
-condition AS (
-
+commodity_condition AS (
     SELECT
         COMMODITY_ID,
         COMMODITY_NAME,
@@ -29,8 +26,7 @@ condition AS (
         END AS STOCK_STATUS
 
     FROM commodity
-
 )
 
 SELECT *
-FROM condition
+FROM commodity_condition
