@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 WITH commodity AS (
     SELECT *
     FROM {{ ref('stg_commodity') }}

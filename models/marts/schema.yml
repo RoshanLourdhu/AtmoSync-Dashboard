@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: fct_commodity_condition
+    description: "Analytical mart calculating price tiers and inventory stock conditions for commodities."
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity identifier."
+        data_tests:
+          - not_null
+
+      - name: PRICE_STATUS
+        description: "Price classification category (High Price, Medium Price, Low Price)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['High Price', 'Medium Price', 'Low Price']
+
+      - name: STOCK_STATUS
+        description: "Stock availability classification (Low Stock, Medium Stock, Available Stock)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['Low Stock', 'Medium Stock', 'Available Stock']

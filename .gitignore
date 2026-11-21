@@ -1,5 +1,16 @@
-
+# dbt build artifacts and run logs
 target/
 dbt_packages/
 logs/
+
+# Sensitive credentials and local profiles (NEVER COMMIT)
 .env
+profiles.yml
+*.pem
+*.key
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/

@@ -1,0 +1,25 @@
+# ==============================================================================
+# AtmoSync dbt Profile Template: my_dbt_project
+# ==============================================================================
+# Instructions:
+# 1. Copy this template to ~/.dbt/profiles.yml (inside WSL: /home/nisha/.dbt/profiles.yml).
+# 2. Populate environment variables or replace placeholder values with your Snowflake credentials.
+# 3. NEVER commit your real profiles.yml or passwords to version control.
+#
+# Profile name MUST match 'profile: my_dbt_project' declared in dbt_project.yml.
+# ==============================================================================
+
+my_dbt_project:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', 'YOUR_ACCOUNT_IDENTIFIER') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'YOUR_SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', 'YOUR_SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'SNOWFLAKE_LEARNING_DB') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'PUBLIC') }}"
+      threads: 4
+      client_session_keep_alive: False
