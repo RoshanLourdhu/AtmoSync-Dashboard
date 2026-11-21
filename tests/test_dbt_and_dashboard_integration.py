@@ -315,7 +315,9 @@ def test_dbt_data_quality_schema_definitions() -> None:
         None,
     )
     assert accepted_values_test is not None, "quality_status missing accepted_values test"
-    assert set(accepted_values_test["accepted_values"]["values"]) == {"PASS", "WARNING", "FAIL"}
+    av_cfg = accepted_values_test["accepted_values"]
+    actual_values = av_cfg.get("values") or av_cfg.get("arguments", {}).get("values")
+    assert set(actual_values) == {"PASS", "WARNING", "FAIL"}
 
 
 # =========================================================================

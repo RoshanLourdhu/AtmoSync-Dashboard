@@ -17,7 +17,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['Avocados', 'Mangoes', 'Bananas']
+              arguments:
+                values: ['Avocados', 'Mangoes', 'Bananas']
       - name: temperature
         description: "Recorded container temperature in Celsius."
         tests:

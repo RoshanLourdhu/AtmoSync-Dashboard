@@ -37,6 +37,8 @@ def generate_quality_report(
     duplicate_count = validation.get("duplicate_records", 0)
     invalid_timestamps = validation.get("invalid_timestamps", 0)
     invalid_humidity = validation.get("invalid_humidity_records", 0)
+    invalid_vibration = validation.get("invalid_vibration_records", 0)
+    invalid_temperature = validation.get("invalid_temperature_records", 0)
     invalid_numeric = sum(validation.get("invalid_numeric_values", {}).values())
 
     # Calculate data quality score (0 - 100%)
@@ -48,6 +50,8 @@ def generate_quality_report(
             + duplicate_count
             + invalid_timestamps
             + invalid_humidity
+            + invalid_vibration
+            + invalid_temperature
             + invalid_numeric
         )
         # Bounded score penalized by total issue density
@@ -64,6 +68,8 @@ def generate_quality_report(
         "invalid_timestamps": invalid_timestamps,
         "invalid_numeric_values": invalid_numeric,
         "invalid_humidity_records": invalid_humidity,
+        "invalid_vibration_records": invalid_vibration,
+        "invalid_temperature_records": invalid_temperature,
         "outliers": validation.get("outliers", {}),
         "validation_status": validation.get("status"),
     }

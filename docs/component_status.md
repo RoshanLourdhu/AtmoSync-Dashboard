@@ -14,13 +14,13 @@ This document provides a live tracking matrix of all platform components, design
 | **Kafka Producer** | Sam / Roshan integration | `streaming/producer/` | Complete (`producer.py`, `README.md`) | 44 tests (`tests/test_kafka_producer.py`) | Pending live Kafka broker |
 | **Kafka Consumer** | Roshan | `streaming/consumer/` | Complete (`consumer.py`) | 20 tests (`tests/test_kafka_consumer.py`) | Pending live Kafka broker & Snowflake |
 | **Data Validation & Contract** | Roshan | `shared/` & `tests/` | Complete (`sensor_validator.py`) | 17 tests (`tests/test_sensor_validator.py`) | Verified against JSON Schema Draft 2020-12 |
-| **Data Quality & Filter Validator** | Navya / Roshan integration | `dashboard/data_quality/` | Complete (`validator.py`, `filter_validator.py`, Plotly) | 15 tests (`tests/test_data_quality_*.py`, `test_filter_*.py`) | Verified across 7-field records & dashboard filters |
+| **Data Quality & Filter Validator** | Navya / Roshan integration | `dashboard/data_quality/` | Complete (`validator.py`, `filter_validator.py`, `report_generator.py`) | 24 tests (`tests/test_data_quality_*.py`, `test_filter_*.py`, `dashboard/data_quality/test_report_generator.py`) | Verified across 7-field records & dashboard filters |
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
-| **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending `dbt-snowflake` run against live warehouse |
+| **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Modern dbt 1.12 syntax; pending live warehouse run |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
-| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`test_pipeline_e2e_integration.py`, `verify_pipeline_e2e.py`) | 2 tests (`tests/test_pipeline_e2e_integration.py`) | Verified through automated multi-stage contract runner |
+| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`smoke_test_pipeline_e2e.py`, `test_pipeline_smoke.py`, `verify_pipeline_e2e.py`) | 7 tests (`tests/integration/test_pipeline_smoke.py`, `tests/test_pipeline_e2e_integration.py`) | Verified through automated 10-stage smoke test harness |
 
-**Total Automated Tests:** 140 passing offline unit and integration tests.
+**Total Automated Tests:** 154 passing offline unit and integration tests (100% pass rate).
 
 ---
 

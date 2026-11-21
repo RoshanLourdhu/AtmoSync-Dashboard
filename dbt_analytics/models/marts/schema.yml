@@ -17,7 +17,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['Avocados', 'Mangoes', 'Bananas']
+              arguments:
+                values: ['Avocados', 'Mangoes', 'Bananas']
       - name: temperature
         description: "Recorded temperature in Celsius."
         tests:
@@ -39,19 +40,22 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: hum_risk_flag
         description: "Binary flag indicating excess humidity (1 = >85%, 0 = normal)."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: vib_risk_flag
         description: "Binary flag indicating mechanical shock or vibration alert (1 = >0.28g, 0 = normal)."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: spoilage_score
         description: "Weighted composite spoilage risk score: 0.6 * temp + 0.3 * hum + 0.1 * vib."
         tests:
@@ -61,7 +65,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['NORMAL', 'WARNING', 'CRITICAL']
+              arguments:
+                values: ['NORMAL', 'WARNING', 'CRITICAL']
 
   - name: fct_arbitrage_opportunities
     description: "Operational rerouting readiness mart identifying containers at elevated spoilage risk requiring route optimization."
@@ -84,7 +89,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['NORMAL', 'WARNING', 'CRITICAL']
+              arguments:
+                values: ['NORMAL', 'WARNING', 'CRITICAL']
       - name: is_reroute_candidate
         description: "Boolean indicating whether the container is a candidate for rerouting."
         tests:
@@ -116,72 +122,84 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['PASS', 'WARNING', 'FAIL']
+              arguments:
+                values: ['PASS', 'WARNING', 'FAIL']
       - name: is_missing_required_fields
         description: "Flag indicating missing mandatory contract fields."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_temperature_physically_impossible
         description: "Flag indicating physically impossible temperature (< -50C or > 60C)."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_temperature_operational_anomaly
         description: "Flag indicating refrigeration departure outside [0C, 25C]."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_humidity_out_of_bounds
         description: "Flag indicating humidity outside physical 0-100 range."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_humidity_near_saturation
         description: "Flag indicating humidity approaching condensation limit (> 95%)."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_vibration_negative
         description: "Flag indicating negative vibration magnitude."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_vibration_shock_alert
         description: "Flag indicating mechanical transit shock exceeding 0.50g."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_timestamp_missing
         description: "Flag indicating missing event timestamp."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_timestamp_future
         description: "Flag indicating timestamp clock drift > 5 minutes in future."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_duplicate_event
         description: "Flag indicating duplicate event occurrence."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: is_unknown_commodity
         description: "Flag indicating unrecognised commodity type."
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
       - name: quality_issue_reasons
         description: "Semicolon-delimited list of detected quality issues and anomaly descriptions."
