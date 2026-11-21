@@ -67,7 +67,8 @@ models:
         data_tests:
           - not_null
           - accepted_values:
-              values: ['Fruits', 'Grains', 'Vegetables']
+              arguments:
+                values: ['Fruits', 'Grains', 'Vegetables']
 
       - name: PRICE
         description: "Unit price of the commodity."

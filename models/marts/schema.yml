@@ -14,11 +14,13 @@ models:
         data_tests:
           - not_null
           - accepted_values:
-              values: ['High Price', 'Medium Price', 'Low Price']
+              arguments:
+                values: ['High Price', 'Medium Price', 'Low Price']
 
       - name: STOCK_STATUS
         description: "Stock availability classification (Low Stock, Medium Stock, Available Stock)."
         data_tests:
           - not_null
           - accepted_values:
-              values: ['Low Stock', 'Medium Stock', 'Available Stock']
+              arguments:
+                values: ['Low Stock', 'Medium Stock', 'Available Stock']
