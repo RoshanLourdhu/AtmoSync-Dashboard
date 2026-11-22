@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: stg_customer
+    description: "Staging model for customer profile and account balance data."
+    columns:
+      - name: CUSTOMER_ID
+        description: "Unique customer identifier."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: CUSTOMER_NAME
+        description: "Name of the customer."
+        data_tests:
+          - not_null
+
+      - name: ACCOUNT_BALANCE
+        description: "Customer account balance."
+
+      - name: MARKET_SEGMENT
+        description: "Customer market segment classification."
+
+  - name: stg_sensor
+    description: "Staging model for cold chain IoT environmental sensor telemetry, deduplicated per sensor."
+    columns:
+      - name: SENSOR_ID
+        description: "Unique sensor identifier."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: SENSOR_NAME
+        description: "Name or model identifier of the sensor."
+        data_tests:
+          - not_null
+
+      - name: TEMPERATURE
+        description: "Sensor temperature reading."
+        data_tests:
+          - not_null
+
+      - name: HUMIDITY
+        description: "Sensor relative humidity percentage."
+
+      - name: RECORDED_AT
+        description: "UTC timestamp of the telemetry reading."
+        data_tests:
+          - not_null
+
+  - name: stg_commodity
+    description: "Staging model for perishable commodity inventory, pricing, and category classification."
+    columns:
+      - name: COMMODITY_ID
+        description: "Unique commodity inventory identifier."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: COMMODITY_NAME
+        description: "Name of the perishable commodity."
+        data_tests:
+          - not_null
+
+      - name: CATEGORY
+        description: "Commodity category classification."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Fruits', 'Grains', 'Vegetables']
+
+      - name: PRICE
+        description: "Unit price of the commodity."
+        data_tests:
+          - not_null
+
+      - name: QUANTITY
+        description: "Available stock quantity in storage."
+        data_tests:
+          - not_null
