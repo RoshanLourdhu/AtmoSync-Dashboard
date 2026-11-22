@@ -1,5 +1,7 @@
 import argparse
+import csv
 import json
+import os
 import random
 import time
 from datetime import datetime, timezone
@@ -15,6 +17,21 @@ from kafka_producer import (
     send_event,
 )
 
+
+CSV_FIELDNAMES = [
+    "event_id",
+    "timestamp_utc",
+    "container_id",
+    "commodity",
+    "origin",
+    "destination",
+    "quantity_kg",
+    "temperature_c",
+    "humidity_pct",
+    "vibration_g",
+    "sensor_status",
+    "anomaly_type",
+]
 KAFKA_TOPIC = DEFAULT_TOPIC
 KAFKA_BOOTSTRAP_SERVERS = DEFAULT_BOOTSTRAP_SERVERS
 CONTAINERS = [
@@ -265,6 +282,11 @@ def parse_args(argv=None):
         default=KAFKA_TOPIC,
         help=f"Kafka target topic (default: {KAFKA_TOPIC})",
     )
+    parser.add_argument(
+        "--csv-out",
+        default=None,
+        help="Optional path to append generated 12-column telemetry events as CSV",
+    )
     return parser.parse_args(argv)
 
 
@@ -282,6 +304,15 @@ def run_simulator(args, producer=None):
         )
         topic = cfg["topic"]
         owns_producer = True
+
+    csv_file = None
+    csv_writer = None
+    if getattr(args, "csv_out", None):
+        file_exists = os.path.exists(args.csv_out) and os.path.getsize(args.csv_out) > 0
+        csv_file = open(args.csv_out, "a", newline="", encoding="utf-8")
+        csv_writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDNAMES)
+        if not file_exists:
+            csv_writer.writeheader()
 
     forced = None if args.scenario == "AUTO" else args.scenario
     event_counter = 0
@@ -301,6 +332,9 @@ def run_simulator(args, producer=None):
                     anomaly_rate=args.anomaly_rate,
                 )
 
+                if csv_writer is not None:
+                    csv_writer.writerow(event)
+
                 if args.dry_run:
                     print(f"[DRY RUN] {json.dumps(event)}")
                 else:
@@ -315,6 +349,8 @@ def run_simulator(args, producer=None):
         print(f"\n[SIMULATOR STOPPED] Published {event_counter} events.")
         return event_counter
     finally:
+        if csv_file is not None:
+            csv_file.close()
         if owns_producer and producer is not None:
             close_producer(producer, timeout=10)
 
