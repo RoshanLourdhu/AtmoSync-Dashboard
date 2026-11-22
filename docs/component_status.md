@@ -18,9 +18,9 @@ This document provides a live tracking matrix of all platform components, design
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Modern dbt 1.12 syntax; pending live warehouse run |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
-| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`smoke_test_pipeline_e2e.py`, `test_pipeline_smoke.py`, `verify_pipeline_e2e.py`) | 7 tests (`tests/integration/test_pipeline_smoke.py`, `tests/test_pipeline_e2e_integration.py`) | Verified through automated 10-stage smoke test harness |
+| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`smoke_test_pipeline_e2e.py`, `test_pipeline_smoke.py`, `verify_pipeline_e2e.py`) | 14 tests (`tests/integration/test_pipeline_smoke.py`, `tests/test_pipeline_e2e_integration.py`) | Verified through automated dual-mode 10-stage smoke test harness (simulation & live) |
 
-**Total Automated Tests:** 154 passing offline unit and integration tests (100% pass rate).
+**Total Automated Tests:** 161 passing offline unit and integration tests (100% pass rate).
 
 ---
 
