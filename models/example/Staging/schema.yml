@@ -2,115 +2,95 @@ version: 2
 
 models:
   - name: my_first_dbt_model
-    description: "A starter dbt model"
-    columns:
-      - name: id
-        description: "The primary key for this table"
-        data_tests:
-          - unique
-          - not_null
+    description: "First example dbt model"
 
   - name: my_second_dbt_model
-    description: "A starter dbt model"
-    columns:
-      - name: id
-        description: "The primary key for this table"
-        data_tests:
-          - unique
-          - not_null
+    description: "Second example dbt model"
 
   - name: stg_customer
-    description: "Staging model for customer data"
-    columns:
-      - name: CUSTOMER_ID
-        description: "Unique customer identifier"
-        data_tests:
-          - unique
-          - not_null
-
-      - name: CUSTOMER_NAME
-        description: "Name of the customer"
-        data_tests:
-          - not_null
-
-      - name: ACCOUNT_BALANCE
-        description: "Customer account balance"
-
-      - name: MARKET_SEGMENT
-        description: "Customer market segment"
+    description: "Customer staging model"
 
   - name: stg_sensor
-    description: "Staging model for sensor data"
-    columns:
-      - name: SENSOR_ID
-        description: "Unique sensor identifier"
-        data_tests:
-          - unique
-          - not_null
+    description: "Sensor staging model"
 
-      - name: SENSOR_NAME
-        description: "Name of the sensor"
-        data_tests:
-          - not_null
-
-      - name: TEMPERATURE
-        description: "Sensor temperature"
-        data_tests:
-          - not_null
   - name: stg_commodity
-    description: "Staging model for commodity data"
-    columns:
-      - name: COMMODITY_ID
-        description: "Unique commodity identifier"
-        data_tests:
-          - unique
-          - not_null
+    description: "Commodity staging model"
 
-      - name: COMMODITY_NAME
-        description: "Name of the commodity"
-        data_tests:
-          - not_null
-
-      - name: CATEGORY
-        description: "Commodity category"
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Fruits', 'Grains', 'Vegetables']
-
-      - name: PRICE
-        description: "Price of the commodity"
-        data_tests:
-          - not_null
-
-      - name: QUANTITY
-        description: "Available quantity"
-        data_tests:
-          - not_null
-  
   - name: fct_commodity_condition
-    description: "Commodity price and stock condition model"
+    description: "Commodity condition analytics model"
+
+  - name: fct_commodity_spoilage
+    description: "Commodity spoilage analytics model"
     columns:
       - name: COMMODITY_ID
-        description: "Unique commodity identifier"
         data_tests:
           - not_null
-
-      - name: PRICE_STATUS
-        description: "Price category based on commodity price"
+      - name: SHELF_LIFE_DAYS
         data_tests:
           - not_null
-          - accepted_values:
-              arguments:
-                values: ['High Price', 'Medium Price', 'Low Price']
-
-      - name: STOCK_STATUS
-        description: "Stock availability based on quantity"
+      - name: DAYS_STORED
+        data_tests:
+          - not_null
+      - name: SPOILAGE_PERCENTAGE
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['Low Stock', 'Medium Stock', 'Available Stock']
-        
+                values: [0, 100]
 
+  - name: fct_commodity_arbitrage
+    description: "Commodity arbitrage analytics model"
+    columns:
+      - name: COMMODITY_NAME
+        data_tests:
+          - not_null
+      - name: BUY_LOCATION
+        data_tests:
+          - not_null
+      - name: SELL_LOCATION
+        data_tests:
+          - not_null
+      - name: BUY_PRICE
+        data_tests:
+          - not_null
+      - name: SELL_PRICE
+        data_tests:
+          - not_null
+      - name: PRICE_DIFFERENCE
+        data_tests:
+          - not_null
+      - name: ARBITRAGE_STATUS
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - Opportunity
+                  - No Opportunity
+
+  - name: fct_commodity_data_quality
+    description: "Commodity data quality analytics model"
+    columns:
+      - name: COMMODITY_ID
+        data_tests:
+          - not_null
+      - name: DATA_QUALITY_STATUS
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - Valid
+                  - Missing Commodity Name
+                  - Missing Category
+                  - Missing Price
+                  - Invalid Price
+                  - Missing Quantity
+                  - Invalid Quantity
+                  - Missing Location
+      - name: IS_VALID_RECORD
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
