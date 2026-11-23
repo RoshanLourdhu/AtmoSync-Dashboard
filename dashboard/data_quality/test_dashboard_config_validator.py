@@ -1,5 +1,9 @@
+
 import unittest
 import yaml
+import subprocess
+import sys
+
 from pathlib import Path
 
 try:
@@ -47,18 +51,21 @@ class TestDashboardConfigValidator(unittest.TestCase):
     def test_duplicate_dataset(self):
         config = self.valid_config.copy()
         config["datasets"] = config["datasets"] * 2
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
     def test_unknown_chart_dataset(self):
         config = self.valid_config.copy()
         config["charts"][0]["dataset"] = "UNKNOWN"
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
     def test_unknown_chart_metric(self):
         config = self.valid_config.copy()
         config["charts"][0]["metrics"] = ["unknown_metric"]
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
@@ -67,24 +74,28 @@ class TestDashboardConfigValidator(unittest.TestCase):
         config["datasets"][0]["metrics"].append(
             config["datasets"][0]["metrics"][0].copy()
         )
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
     def test_unknown_filter_target(self):
         config = self.valid_config.copy()
         config["filters"][0]["targets"] = ["UNKNOWN"]
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
     def test_duplicate_chart(self):
         config = self.valid_config.copy()
         config["charts"].append(config["charts"][0].copy())
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
     def test_missing_metric_expression(self):
         config = self.valid_config.copy()
         config["datasets"][0]["metrics"][0]["expression"] = ""
+
         result = validate_dashboard_config(config)
         self.assertEqual(result["status"], "Failed")
 
@@ -94,15 +105,40 @@ class TestDashboardConfigValidator(unittest.TestCase):
             / "dashboards"
             / "datasets_and_charts.yaml"
         )
+
         with open(yaml_path, "r", encoding="utf-8") as file:
             config = yaml.safe_load(file)
 
         result = validate_dashboard_config(config)
+
         self.assertEqual(result["status"], "Passed")
         self.assertEqual(result["summary"]["validated_datasets"], 4)
         self.assertEqual(result["summary"]["validated_metrics"], 20)
         self.assertEqual(result["summary"]["validated_charts"], 12)
         self.assertEqual(result["summary"]["validated_filters"], 4)
+
+    def test_cli_missing_config_file(self):
+        validator_path = (
+            Path(__file__).resolve().parent
+            / "dashboard_config_validator.py"
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(validator_path),
+                "--config",
+                "missing_config.yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            "Configuration file not found",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":
