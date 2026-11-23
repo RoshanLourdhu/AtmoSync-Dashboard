@@ -1,24 +1,6 @@
 version: 2
 
 models:
-  - name: my_first_dbt_model
-    description: "First example dbt model"
-
-  - name: my_second_dbt_model
-    description: "Second example dbt model"
-
-  - name: stg_customer
-    description: "Customer staging model"
-
-  - name: stg_sensor
-    description: "Sensor staging model"
-
-  - name: stg_commodity
-    description: "Commodity staging model"
-
-  - name: fct_commodity_condition
-    description: "Commodity condition analytics model"
-
   - name: fct_commodity_spoilage
     description: "Commodity spoilage analytics model"
     columns:
@@ -94,3 +76,4 @@ models:
           - accepted_values:
               arguments:
                 values: [0, 1]
+                

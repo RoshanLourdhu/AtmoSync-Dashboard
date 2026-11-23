@@ -6,9 +6,15 @@ sources:
     schema: TPCH_SF1
     tables:
       - name: CUSTOMER
+
   - name: sensor_source
     database: SNOWFLAKE_LEARNING_DB
     schema: PUBLIC
     tables:
       - name: RAW_SENSOR
+
+  - name: commodity_source
+    database: SNOWFLAKE_LEARNING_DB
+    schema: PUBLIC
+    tables:
       - name: RAW_COMMODITY

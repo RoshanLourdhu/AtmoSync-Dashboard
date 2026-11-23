@@ -1,7 +1,7 @@
 WITH source AS (
 
     SELECT *
-    FROM {{ source('sensor_source', 'RAW_COMMODITY') }}
+    FROM {{ source('commodity_source', 'RAW_COMMODITY') }}
 
 ),
 
