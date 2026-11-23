@@ -52,6 +52,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from dashboard.data_quality.dashboard_config_validator import validate_dashboard_config
 from dashboard.data_quality.filter_validator import validate_filter_configuration
 from dashboard.data_quality.report_generator import generate_quality_report
 from shared.validation import validate_sensor_event
@@ -449,6 +450,29 @@ class PipelineSmokeTest:
         t0 = time.perf_counter()
         if self.mode == MODE_LIVE:
             kafka_host = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+            host_port = kafka_host.split(",")[0].strip()
+            if ":" in host_port:
+                host, port_str = host_port.rsplit(":", 1)
+                port = int(port_str)
+            else:
+                host, port = host_port, 9092
+
+            # Check socket connectivity first
+            is_listening = check_port_listening(host, port, timeout=min(self.timeout, 2.0))
+            if not is_listening:
+                duration = round((time.perf_counter() - t0) * 1000, 2)
+                self.stages.append(
+                    StageResult(
+                        stage_number=5,
+                        name="Consumer Decoding & Poison-Pill Isolation",
+                        status="FAILED",
+                        mode=TAG_LIVE,
+                        duration_ms=duration,
+                        error=f"LIVE_SERVICE_UNAVAILABLE: Kafka broker unreachable at {kafka_host} (connection refused or offline).",
+                    )
+                )
+                return
+
             try:
                 # In live mode, verify broker and consumer
                 consumer = SensorKafkaConsumer(
@@ -459,7 +483,7 @@ class PipelineSmokeTest:
                     )
                 )
                 # Attempt to poll live message
-                messages = consumer.poll_messages(batch_size=1)
+                messages = consumer.poll_messages(max_records=1)
                 duration = round((time.perf_counter() - t0) * 1000, 2)
                 self.stages.append(
                     StageResult(
@@ -1054,6 +1078,10 @@ class PipelineSmokeTest:
                 with open(yaml_path, "r", encoding="utf-8") as f:
                     config = yaml.safe_load(f)
 
+                # 1. Comprehensive dashboard configuration validation (datasets, metrics, charts, filters)
+                dash_validation = validate_dashboard_config(config)
+                assert dash_validation["status"] == "Passed", f"Dashboard configuration validation failed: {dash_validation['errors']}"
+
                 raw_filters = config.get("filters", [])
                 valid_cols = set()
                 for ds in config.get("datasets", []):
@@ -1084,6 +1112,7 @@ class PipelineSmokeTest:
                         duration_ms=duration,
                         details={
                             "filter_count": filter_validation["total_filters"],
+                            "validated_charts": dash_validation["summary"]["validated_charts"],
                             "quality_score": report["quality_score"],
                         },
                     )

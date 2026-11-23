@@ -176,7 +176,8 @@ Complete step-by-step instructions are available in [docs/team_onboarding.md](do
 | **Data Validation** | Roshan | `shared/schemas/` & `tests/` | Implemented (JSON Schema draft 2020-12 runtime validator & automated test suite) |
 | **Snowflake Ingestion** | Roshan | `snowflake/` | Implemented (RAW landing DDL, connection manager, single & batch ingestion engine) |
 | **Data Transformations & Marts** | Nisha / Roshan integration | `dbt_analytics/` | Implemented (stg_sensor_readings, fct_spoilage_risk, fct_arbitrage_opportunities, schema tests) |
-| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Implemented (Docker Compose, snowflake-sqlalchemy, KPI blueprint, dataset specs) |
+| **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Implemented (Docker Compose, snowflake-sqlalchemy, KPI blueprint, dataset specs, config CLI validator) |
+| **Pipeline E2E Smoke Testing** | Roshan | `tests/` & `scripts/` | Implemented (repeatable dual-mode 10-stage integration smoke test harness, 173 automated tests) |
 
 For full details and next implementation steps, see [docs/component_status.md](docs/component_status.md).
 

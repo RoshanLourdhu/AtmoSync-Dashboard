@@ -120,3 +120,48 @@ def test_load_sensor_schema_success() -> None:
     assert schema.get("title") == "AtmoSync sensor reading"
     assert "required" in schema
 
+
+def test_export_events_to_csv_creates_valid_file(valid_event: dict[str, Any], tmp_path: Path) -> None:
+    """Verifies that export_events_to_csv creates a standard 7-field CSV file."""
+    import csv
+    from sensor_simulator.simulator import CSV_FIELDNAMES, export_events_to_csv
+
+    out_file = tmp_path / "telemetry_test.csv"
+    count = export_events_to_csv([valid_event], out_file)
+    assert count == 1
+    assert out_file.exists()
+
+    with out_file.open("r", encoding="utf-8") as f:
+        reader = list(csv.reader(f))
+    assert len(reader) == 2
+    assert reader[0] == CSV_FIELDNAMES
+    assert reader[1][0] == valid_event["container_id"]
+    assert reader[1][1] == valid_event["shipment_id"]
+
+
+def test_sensor_simulator_export_to_csv_batches(tmp_path: Path) -> None:
+    """Verifies that SensorSimulator.export_to_csv writes multiple batches of valid telemetry."""
+    import csv
+    from sensor_simulator.simulator import CSV_FIELDNAMES, SensorSimulator
+
+    sim = SensorSimulator()
+    out_file = tmp_path / "simulated_batches.csv"
+    count = sim.export_to_csv(out_file, num_batches=2)
+    assert count == 6  # 3 containers * 2 batches
+    assert out_file.exists()
+
+    with out_file.open("r", encoding="utf-8") as f:
+        reader = list(csv.reader(f))
+    assert len(reader) == 7  # header + 6 rows
+    assert reader[0] == CSV_FIELDNAMES
+
+
+def test_export_events_to_csv_rejects_invalid_event(tmp_path: Path) -> None:
+    """Verifies that exporting an invalid event raises SensorValidationError."""
+    from sensor_simulator.simulator import export_events_to_csv
+
+    out_file = tmp_path / "invalid_telemetry.csv"
+    invalid_event = {"container_id": "C001", "temperature": 5.0}  # missing required fields
+    with pytest.raises(SensorValidationError):
+        export_events_to_csv([invalid_event], out_file)
+

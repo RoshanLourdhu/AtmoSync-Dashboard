@@ -9,12 +9,56 @@ to strictly conform to `shared/schemas/sensor_reading.schema.json`.
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from shared.validation import validate_sensor_event
+
+CSV_FIELDNAMES = [
+    "container_id",
+    "shipment_id",
+    "commodity",
+    "temperature",
+    "humidity",
+    "vibration",
+    "timestamp",
+]
+
+
+def export_events_to_csv(
+    events: list[dict[str, Any]],
+    filepath: str | Path,
+    include_header: bool = True,
+) -> int:
+    """
+    Exports a list of schema-valid sensor telemetry events to a CSV file.
+    Enforces official 7-field contract ordering.
+
+    Args:
+        events: List of validated sensor event dictionaries.
+        filepath: Destination path for the CSV output.
+        include_header: Whether to write the header row.
+
+    Returns:
+        int: Number of rows written.
+    """
+    path = Path(filepath)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = include_header and (not path.exists() or path.stat().st_size == 0)
+
+    with path.open("a" if path.exists() and not include_header else "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES)
+        if write_header:
+            writer.writeheader()
+        for ev in events:
+            validate_sensor_event(ev)
+            writer.writerow({k: ev.get(k) for k in CSV_FIELDNAMES})
+
+    return len(events)
 
 # Baseline container registry with target parameters and shipment mappings
 DEFAULT_CONTAINERS: list[dict[str, Any]] = [
@@ -147,3 +191,25 @@ class SensorSimulator:
             self.generate_event(container, timestamp=timestamp)
             for container in self.containers
         ]
+
+    def export_to_csv(
+        self,
+        filepath: str | Path,
+        num_batches: int = 1,
+        include_header: bool = True,
+    ) -> int:
+        """
+        Generates `num_batches` of sensor events and exports them to a CSV file.
+
+        Args:
+            filepath: Destination CSV file path.
+            num_batches: Number of generation rounds to execute.
+            include_header: Whether to include the CSV header row.
+
+        Returns:
+            int: Total number of records exported.
+        """
+        all_events: list[dict[str, Any]] = []
+        for _ in range(max(1, num_batches)):
+            all_events.extend(self.generate_batch())
+        return export_events_to_csv(all_events, filepath, include_header=include_header)
