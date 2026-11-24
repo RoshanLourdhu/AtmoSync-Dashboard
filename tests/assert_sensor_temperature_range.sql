@@ -1,0 +1,4 @@
+SELECT *
+FROM {{ ref('stg_sensor') }}
+WHERE TEMPERATURE < -50
+   OR TEMPERATURE > 100
