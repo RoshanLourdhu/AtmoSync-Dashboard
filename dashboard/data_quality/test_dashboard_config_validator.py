@@ -48,6 +48,14 @@ class TestDashboardConfigValidator(unittest.TestCase):
         self.assertEqual(result["status"], "Passed")
         self.assertEqual(result["errors"], [])
 
+    def test_empty_configuration(self):
+        config = {}
+
+        result = validate_dashboard_config(config)
+
+        self.assertEqual(result["status"], "Failed")
+        self.assertTrue(result["errors"])
+
     def test_duplicate_dataset(self):
         config = self.valid_config.copy()
         config["datasets"] = config["datasets"] * 2

@@ -1,6 +1,4 @@
 
-
-
 from __future__ import annotations
 
 import argparse
@@ -16,6 +14,26 @@ def validate_dashboard_config(config: dict[str, Any]) -> dict[str, Any]:
 
     errors: list[str] = []
     warnings: list[str] = []
+
+    # Reject empty or invalid configuration
+    if not isinstance(config, dict) or not config:
+        return {
+            "status": "Failed",
+            "summary": {
+                "total_datasets": 0,
+                "validated_datasets": 0,
+                "total_metrics": 0,
+                "validated_metrics": 0,
+                "total_charts": 0,
+                "validated_charts": 0,
+                "total_filters": 0,
+                "validated_filters": 0,
+            },
+            "errors": [
+                "Dashboard configuration cannot be empty."
+            ],
+            "warnings": [],
+        }
 
     datasets = config.get("datasets", [])
     charts = config.get("charts", [])
@@ -145,7 +163,10 @@ def validate_dashboard_config(config: dict[str, Any]) -> dict[str, Any]:
         else:
             chart_names.add(chart_name)
 
-        if not isinstance(dataset_name, str) or dataset_name not in dataset_map:
+        if (
+            not isinstance(dataset_name, str)
+            or dataset_name not in dataset_map
+        ):
             errors.append(
                 f"Chart '{chart_name}': Unknown dataset "
                 f"'{dataset_name}'."
