@@ -177,13 +177,37 @@ Complete step-by-step instructions are available in [docs/team_onboarding.md](do
 | **Snowflake Ingestion** | Roshan | `snowflake/` | Implemented (RAW landing DDL, connection manager, single & batch ingestion engine) |
 | **Data Transformations & Marts** | Nisha / Roshan integration | `dbt_analytics/` | Implemented (stg_sensor_readings, fct_spoilage_risk, fct_arbitrage_opportunities, schema tests) |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Implemented (Docker Compose, snowflake-sqlalchemy, KPI blueprint, dataset specs, config CLI validator) |
-| **Pipeline E2E Smoke Testing** | Roshan | `tests/` & `scripts/` | Implemented (repeatable dual-mode 10-stage integration smoke test harness, 173 automated tests) |
+| **Pipeline E2E Smoke Testing** | Roshan | `tests/` & `scripts/` | Implemented (repeatable dual-mode 10-stage integration smoke test harness, 176 automated tests) |
+| **Automated CI Pipeline** | Roshan | `.github/workflows/` | Implemented (GitHub Actions pipeline_ci.yml: syntax, pytest, smoke test, dbt parse) |
 
 For full details and next implementation steps, see [docs/component_status.md](docs/component_status.md).
 
 ---
 
-## 8. Documentation Index
+## 8. Continuous Integration (CI) Pipeline
+
+AtmoSync utilizes GitHub Actions for continuous automated quality verification (`.github/workflows/pipeline_ci.yml`).
+
+### Workflow Triggers:
+- **Pushes:** to `main` and `roshan` branches.
+- **Pull Requests:** targeting `main`.
+- **Manual Execution:** via GitHub Actions `workflow_dispatch`.
+
+### Automated Verification Stages:
+1. **Python Syntax Compilation:** Verifies syntax integrity across all tracked Python source files via `py_compile`.
+2. **Dashboard Configuration Validation:** Validates semantic bindings, datasets, KPI expressions, and filter scopes in `datasets_and_charts.yaml`.
+3. **Automated Test Suite:** Runs all 176 unit, integration, and data-quality tests with `pytest` across `tests/` and `dashboard/data_quality/`.
+4. **End-to-End Pipeline Smoke Test:** Runs the repeatable 10-stage simulation harness (`smoke_test_pipeline_e2e.py --mode simulation`).
+5. **dbt Project Validation:** Validates dbt model graph, schema assertions, and macros via `dbt parse --no-partial-parse`.
+
+### Offline & Security Design:
+- **No Credentials Required:** The standard CI pipeline runs strictly offline. It requires no Snowflake passwords, Kafka broker connections, or Docker containers.
+- **Viewing Execution Logs:** Navigate to the **Actions** tab on GitHub and select **AtmoSync Continuous Integration Pipeline** to review step timings and stage reports.
+- **Limitations:** Live external services (broker messaging, live Snowflake warehouse persistence) are intentionally tested separately using `scripts/smoke_test_pipeline_e2e.py --mode live`.
+
+---
+
+## 9. Documentation Index
 
 - [Project Overview](docs/project_overview.md) — Scope, technology stack, and objectives.
 - [System Architecture](docs/system_architecture.md) — Pipeline components and data flow.

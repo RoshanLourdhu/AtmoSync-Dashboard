@@ -7,9 +7,9 @@ atmosync_profile:
   outputs:
     dev:
       type: snowflake
-      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-      user: "{{ env_var('SNOWFLAKE_USER') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', 'ci_dummy_account') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'ci_dummy_user') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', 'ci_dummy_password') }}"
       role: "{{ env_var('SNOWFLAKE_ROLE', 'ATMOSYNC_INGEST_ROLE') }}"
       database: "{{ env_var('SNOWFLAKE_DATABASE', 'ATMOSYNC_DB') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'ATMOSYNC_WH') }}"

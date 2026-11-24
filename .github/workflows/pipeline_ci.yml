@@ -1,0 +1,65 @@
+name: AtmoSync Continuous Integration Pipeline
+
+"on":
+  push:
+    branches:
+      - main
+      - roshan
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline-ci:
+    name: Build, Test & Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile $(git ls-files '*.py')
+
+      - name: Validate dashboard configuration
+        run: |
+          python dashboard/data_quality/dashboard_config_validator.py
+
+      - name: Run automated pytest suite
+        run: |
+          pytest tests/ dashboard/data_quality/ -v --durations=10
+
+      - name: Run end-to-end pipeline smoke test (simulation)
+        run: |
+          python scripts/smoke_test_pipeline_e2e.py --mode simulation
+
+      - name: Set up dbt profiles
+        run: |
+          mkdir -p ~/.dbt
+          cp dbt_analytics/profiles.yml.example ~/.dbt/profiles.yml
+
+      - name: Validate dbt project (offline parse)
+        working-directory: dbt_analytics
+        env:
+          SNOWFLAKE_ACCOUNT: ci_dummy_account
+          SNOWFLAKE_USER: ci_dummy_user
+          SNOWFLAKE_PASSWORD: ci_dummy_password
+        run: |
+          dbt parse --no-partial-parse
