@@ -1,4 +1,4 @@
-﻿name: AtmoSync Telemetry Tests
+name: AtmoSync Telemetry Tests
 
 on:
   push:
