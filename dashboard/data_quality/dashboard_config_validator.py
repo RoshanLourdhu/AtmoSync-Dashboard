@@ -35,6 +35,15 @@ def validate_dashboard_config(config: dict[str, Any]) -> dict[str, Any]:
             "warnings": [],
         }
 
+    # Validate required configuration sections
+    required_sections = ["datasets", "charts", "filters"]
+
+    for section in required_sections:
+        if section not in config:
+            errors.append(
+                f"Missing required configuration section: {section}."
+            )
+
     datasets = config.get("datasets", [])
     charts = config.get("charts", [])
     filters = config.get("filters", [])
