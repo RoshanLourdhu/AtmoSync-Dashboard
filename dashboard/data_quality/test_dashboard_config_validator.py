@@ -66,6 +66,18 @@ class TestDashboardConfigValidator(unittest.TestCase):
         self.assertEqual(result["status"], "Failed")
         self.assertTrue(result["errors"])
 
+    def test_invalid_charts_section_type(self):
+        config = self.valid_config.copy()
+        config["charts"] = "invalid"
+
+        result = validate_dashboard_config(config)
+
+        self.assertEqual(result["status"], "Failed")
+        self.assertIn(
+            "Charts must be provided as a list.",
+            result["errors"],
+        )
+
     def test_duplicate_dataset(self):
         config = self.valid_config.copy()
         config["datasets"] = config["datasets"] * 2
