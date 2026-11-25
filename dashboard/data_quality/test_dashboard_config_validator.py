@@ -1,8 +1,8 @@
-
 import unittest
 import yaml
 import subprocess
 import sys
+import tempfile
 
 from pathlib import Path
 
@@ -169,6 +169,36 @@ class TestDashboardConfigValidator(unittest.TestCase):
             "Configuration file not found",
             result.stdout,
         )
+
+    def test_cli_invalid_yaml_file(self):
+        validator_path = (
+            Path(__file__).resolve().parent
+            / "dashboard_config_validator.py"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "invalid.yaml"
+            config_path.write_text(
+                "datasets: [invalid",
+                encoding="utf-8"
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(validator_path),
+                    "--config",
+                    str(config_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(
+                "Invalid YAML configuration",
+                result.stdout,
+            )
 
 
 if __name__ == "__main__":
