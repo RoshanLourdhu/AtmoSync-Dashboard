@@ -65,6 +65,28 @@ def test_ci_workflow_job_configuration(workflow_config: dict) -> None:
     assert str(python_version) == "3.11", "CI job must pin Python 3.11 runtime"
 
 
+def test_ci_workflow_permissions_concurrency_and_reporting(workflow_config: dict) -> None:
+    """Verifies least-privilege permissions, concurrency cancellation, and JUnit/summary reporting."""
+    permissions = workflow_config.get("permissions", {})
+    assert permissions.get("contents") == "read", "Workflow must enforce read-only contents permission"
+
+    concurrency = workflow_config.get("concurrency", {})
+    assert concurrency.get("group"), "Workflow must define a concurrency group"
+    assert concurrency.get("cancel-in-progress") is True, "Workflow should cancel superseded runs"
+
+    steps = workflow_config["jobs"]["pipeline-ci"]["steps"]
+    pytest_steps = [s for s in steps if "--junitxml=" in s.get("run", "")]
+    assert len(pytest_steps) == 1, "Pytest step must emit a JUnit XML report for visibility"
+
+    artifact_steps = [s for s in steps if "upload-artifact" in s.get("uses", "")]
+    assert len(artifact_steps) == 1, "CI job must upload test artifacts"
+    assert artifact_steps[0].get("if") == "always()", "Artifact upload must run even on test failure"
+
+    summary_steps = [s for s in steps if "GITHUB_STEP_SUMMARY" in s.get("run", "")]
+    assert len(summary_steps) == 1, "CI job must publish a step summary"
+    assert summary_steps[0].get("if") == "always()", "Step summary must publish even on failure"
+
+
 def test_ci_referenced_paths_exist_in_repository(workflow_config: dict) -> None:
     """Asserts that all files and directories referenced in workflow steps exist in the workspace."""
     assert (PROJECT_ROOT / "requirements.txt").is_file()

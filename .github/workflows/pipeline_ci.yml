@@ -13,6 +13,10 @@ name: AtmoSync Continuous Integration Pipeline
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pipeline-ci:
     name: Build, Test & Validate
@@ -32,30 +36,41 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
       - name: Validate Python syntax
+        id: syntax_check
         run: |
-          python -m py_compile $(git ls-files '*.py')
+          git ls-files -z '*.py' | xargs -0 python -m py_compile
 
       - name: Validate dashboard configuration
+        id: dashboard_check
+        if: ${{ !cancelled() }}
         run: |
           python dashboard/data_quality/dashboard_config_validator.py
 
       - name: Run automated pytest suite
+        id: pytest_suite
+        if: ${{ !cancelled() }}
         run: |
-          pytest tests/ dashboard/data_quality/ -v --durations=10
+          mkdir -p test-results
+          python -m pytest tests/ dashboard/data_quality/ -v --durations=10 --junitxml=test-results/pytest-junit.xml
 
       - name: Run end-to-end pipeline smoke test (simulation)
+        id: smoke_test
+        if: ${{ !cancelled() }}
         run: |
           python scripts/smoke_test_pipeline_e2e.py --mode simulation
 
       - name: Set up dbt profiles
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p ~/.dbt
           cp dbt_analytics/profiles.yml.example ~/.dbt/profiles.yml
 
       - name: Validate dbt project (offline parse)
+        id: dbt_parse
+        if: ${{ !cancelled() }}
         working-directory: dbt_analytics
         env:
           SNOWFLAKE_ACCOUNT: ci_dummy_account
@@ -63,3 +78,55 @@ jobs:
           SNOWFLAKE_PASSWORD: ci_dummy_password
         run: |
           dbt parse --no-partial-parse
+
+      - name: Upload pytest JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-junit-report
+          path: test-results/pytest-junit.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Publish CI validation summary
+        if: always()
+        run: |
+          python - <<'EOF'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if not summary_path:
+              raise SystemExit(0)
+
+          lines = [
+              "## AtmoSync CI Validation Summary",
+              "",
+              "| Stage | Outcome |",
+              "|---|---|",
+              f"| Python Syntax | `${{ steps.syntax_check.outcome }}` |",
+              f"| Dashboard Config | `${{ steps.dashboard_check.outcome }}` |",
+              f"| Pytest Suite | `${{ steps.pytest_suite.outcome }}` |",
+              f"| E2E Smoke Test (Simulation) | `${{ steps.smoke_test.outcome }}` |",
+              f"| dbt Offline Parse | `${{ steps.dbt_parse.outcome }}` |",
+          ]
+
+          junit_file = Path("test-results/pytest-junit.xml")
+          if junit_file.is_file():
+              root = ET.parse(junit_file).getroot()
+              suite = root.find("testsuite") if root.tag == "testsuites" else root
+              if suite is not None:
+                  tests = suite.attrib.get("tests", "0")
+                  failures = suite.attrib.get("failures", "0")
+                  errors = suite.attrib.get("errors", "0")
+                  skipped = suite.attrib.get("skipped", "0")
+                  elapsed = suite.attrib.get("time", "0")
+                  lines.extend([
+                      "",
+                      f"**Pytest Results:** {tests} total, {failures} failures, {errors} errors, {skipped} skipped ({elapsed}s)",
+                  ])
+
+          with open(summary_path, "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          EOF

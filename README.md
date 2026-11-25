@@ -202,7 +202,9 @@ AtmoSync utilizes GitHub Actions for continuous automated quality verification (
 
 ### Offline & Security Design:
 - **No Credentials Required:** The standard CI pipeline runs strictly offline. It requires no Snowflake passwords, Kafka broker connections, or Docker containers.
-- **Viewing Execution Logs:** Navigate to the **Actions** tab on GitHub and select **AtmoSync Continuous Integration Pipeline** to review step timings and stage reports.
+- **Concurrency & Permissions:** Uses least-privilege `contents: read` permissions and cancels superseded runs on the same branch or pull request automatically.
+- **Test Visibility & Artifacts:** Generates a JUnit XML test report (`pytest-junit-report` artifact, retained 14 days), evaluates all validation stages even if an earlier check fails (`!cancelled()`), and publishes a stage summary to the GitHub Actions job summary.
+- **Viewing Execution Logs:** Navigate to the **Actions** tab on GitHub and select **AtmoSync Continuous Integration Pipeline** to review step timings, JUnit artifacts, and stage reports.
 - **Limitations:** Live external services (broker messaging, live Snowflake warehouse persistence) are intentionally tested separately using `scripts/smoke_test_pipeline_e2e.py --mode live`.
 
 ---
