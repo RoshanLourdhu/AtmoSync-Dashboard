@@ -152,3 +152,29 @@ dbt test
 ## 7. Known Production Integration Roadmap
 
 - **Production Source Alignment**: Roshan's streaming ingestion pipeline loads IoT events into `ATMOSYNC_DB.RAW.SENSOR_READINGS` with JSON variant payloads (`EVENT_PAYLOAD`). When integrating into production, update `sources.yml` to point to `ATMOSYNC_DB.RAW.SENSOR_READINGS`.
+
+## Spoilage Risk Rules and Assumptions
+
+The current spoilage model uses the following project-defined shelf-life assumptions:
+
+| Commodity Category | Shelf Life |
+|---|---:|
+| Fruits | 5 days |
+| Vegetables | 7 days |
+| Grains | 30 days |
+
+### Spoilage Calculation
+
+- DAYS_STORED is calculated using RECORDED_AT and CURRENT_DATE().
+- When DAYS_STORED is greater than or equal to SHELF_LIFE_DAYS, SPOILAGE_PERCENTAGE is 100.
+- Before the shelf-life threshold, SPOILAGE_PERCENTAGE is 0.
+- Unknown categories produce NULL shelf-life and spoilage values.
+- SPOILED_QUANTITY and GOOD_QUANTITY are calculated from QUANTITY.
+
+### Assumptions and Limitations
+
+These shelf-life values are project assumptions and have not been independently verified against commodity-specific industry standards.
+
+The model uses RECORDED_AT as the storage-age reference date. Actual storage conditions, temperature variations, humidity, and commodity-specific handling are not currently incorporated into the spoilage calculation.
+
+A SQL data test validates the shelf-life and spoilage calculation rules.
