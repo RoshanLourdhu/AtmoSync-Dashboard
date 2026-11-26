@@ -209,7 +209,23 @@ AtmoSync utilizes GitHub Actions for continuous automated quality verification (
 
 ---
 
-## 9. Documentation Index
+## 9. Team Contribution-Day Audit Tool
+
+To help monitor daily branch-level participation across the team, AtmoSync includes [`scripts/team_commit_day_report.py`](scripts/team_commit_day_report.py).
+
+- **Contribution Days vs. Commit Counts:** Pushing multiple commits on the same calendar date counts as **1 distinct contribution day** (stored as a normalized set of calendar dates), not multiple days.
+- **Branch & Author Attribution:** Fetches remote refs (`origin`), inspects commits in `origin/main..origin/<branch>` so shared `main` commits are excluded, deduplicates commit hashes, matches authors by configured email/identity (excluding delegated commits authored by other team members), and reports unrecognized authors separately.
+- **Merge Policy & Timezone:** Merge-only commits are excluded by default (`--include-merges` to include). Author timestamps are normalized to `Asia/Kolkata` by default (`--timezone` to override) before extracting inclusive calendar dates (`--start`, `--end`).
+- **Usage:**
+  ```bash
+  python scripts/team_commit_day_report.py --start 2026-11-05 --end 2026-11-26
+  python scripts/team_commit_day_report.py --start 2026-11-05 --end 2026-11-26 --markdown docs/team_audit.md --csv docs/team_audit.csv
+  ```
+- **Limitations:** This is an independent Git history auditing convention for project lead visibility and may not exactly reproduce GitHub's official contribution graph or Infotact's official internship eligibility calculations.
+
+---
+
+## 10. Documentation Index
 
 - [Project Overview](docs/project_overview.md) — Scope, technology stack, and objectives.
 - [System Architecture](docs/system_architecture.md) — Pipeline components and data flow.
