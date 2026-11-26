@@ -1,5 +1,6 @@
 import argparse
 import json
+from telemetry_sink import DBT_STAGING_FIELDS, TelemetrySQLiteSink, to_dbt_commodity_row
 from types import SimpleNamespace
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
@@ -123,7 +124,7 @@ def _decode_record_value(raw_value):
     raise TelemetryValidationError(f"Unsupported record payload type: {type(raw_value).__name__}")
 
 
-def consume_events(consumer, max_messages=0, on_alert=None):
+def consume_events(consumer, max_messages=0, on_alert=None, on_event=None):
     """Read, validate, and summarize telemetry messages from a Kafka consumer iterable."""
     consumed = 0
     alerts = 0
@@ -142,6 +143,8 @@ def consume_events(consumer, max_messages=0, on_alert=None):
             continue
 
         consumed += 1
+        if callable(on_event):
+            on_event(event)
         if event["sensor_status"] in {"WARNING", "ALERT", "FAULT"} or event["anomaly_type"] != "NONE":
             alerts += 1
             print(
@@ -205,10 +208,28 @@ def parse_args(argv=None):
         action="store_true",
         help="Validate a sample batch of generated telemetry records offline without Kafka",
     )
+    parser.add_argument(
+        "--db-out",
+        default=None,
+        help="Optional SQLite database path for persisting validated telemetry events",
+    )
+    parser.add_argument(
+        "--dbt-csv-out",
+        default=None,
+        help="Optional CSV path for exporting dbt-aligned commodity staging rows",
+    )
     return parser.parse_args(argv)
 
 
 def run_consumer(args, consumer=None):
+    db_out = getattr(args, "db_out", None)
+    dbt_csv_out = getattr(args, "dbt_csv_out", None)
+    sink = TelemetrySQLiteSink(db_path=db_out) if db_out else None
+    on_event = sink.write_event if sink is not None else None
+    staged_events = [] if (sink is None and dbt_csv_out) else None
+    if staged_events is not None:
+        on_event = staged_events.append
+
     if args.dry_run:
         sample_count = args.max_messages if args.max_messages > 0 else 3
         records = []
@@ -216,34 +237,54 @@ def run_consumer(args, consumer=None):
             container = CONTAINERS[(idx - 1) % len(CONTAINERS)]
             event = generate_event(container, idx, anomaly_rate=0.35)
             records.append(SimpleNamespace(value=json.dumps(event).encode("utf-8")))
-        return consume_events(records, max_messages=sample_count)
+        summary = consume_events(records, max_messages=sample_count, on_event=on_event)
+    else:
+        owns_consumer = False
+        if consumer is None:
+            consumer, _ = create_consumer(
+                {
+                    "bootstrap_servers": args.bootstrap_servers,
+                    "topic": args.topic,
+                    "group_id": args.group_id,
+                    "consumer_timeout_ms": args.timeout_ms,
+                }
+            )
+            owns_consumer = True
 
-    owns_consumer = False
-    if consumer is None:
-        consumer, _ = create_consumer(
-            {
-                "bootstrap_servers": args.bootstrap_servers,
-                "topic": args.topic,
-                "group_id": args.group_id,
-                "consumer_timeout_ms": args.timeout_ms,
-            }
-        )
-        owns_consumer = True
+        try:
+            summary = consume_events(
+                consumer, max_messages=args.max_messages, on_event=on_event
+            )
+        finally:
+            if owns_consumer:
+                close_consumer(consumer)
 
-    try:
-        return consume_events(consumer, max_messages=args.max_messages)
-    finally:
-        if owns_consumer:
-            close_consumer(consumer)
+    if sink is not None:
+        summary["persisted"] = sink.stats()["events_count"]
+        if dbt_csv_out:
+            sink.export_dbt_staging_csv(dbt_csv_out)
+    elif dbt_csv_out and staged_events is not None:
+        import csv
+        from telemetry_sink import DBT_STAGING_FIELDS, to_dbt_commodity_row
+
+        with open(dbt_csv_out, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(DBT_STAGING_FIELDS))
+            writer.writeheader()
+            writer.writerows(to_dbt_commodity_row(ev) for ev in staged_events)
+
+    return summary
 
 
 def main(argv=None):
     args = parse_args(argv)
     try:
         summary = run_consumer(args)
+        persisted_part = (
+            f" persisted={summary['persisted']}" if "persisted" in summary else ""
+        )
         print(
             f"[CONSUMER SUMMARY] consumed={summary['consumed']} "
-            f"alerts={summary['alerts']} invalid={summary['invalid']}"
+            f"alerts={summary['alerts']} invalid={summary['invalid']}{persisted_part}"
         )
     except ConsumerConfigError as exc:
         print(f"[CONSUMER CONFIG ERROR] {exc}")
