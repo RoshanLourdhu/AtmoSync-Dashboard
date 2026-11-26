@@ -200,6 +200,33 @@ class TestDashboardConfigValidator(unittest.TestCase):
                 result.stdout,
             )
 
+    def test_cli_empty_yaml_file(self):
+        validator_path = (
+            Path(__file__).resolve().parent
+            / "dashboard_config_validator.py"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "empty.yaml"
+            config_path.write_text("", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(validator_path),
+                    "--config",
+                    str(config_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(
+                "YAML configuration must contain a mapping",
+                result.stdout,
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
