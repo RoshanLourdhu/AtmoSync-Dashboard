@@ -1,0 +1,15 @@
+WITH fixture_stats AS (
+
+    SELECT
+        COUNT(*) AS TOTAL_ROWS,
+        COUNT_IF(PRICE IS NULL) AS NULL_PRICE_ROWS,
+        COUNT_IF(QUANTITY IS NULL) AS NULL_QUANTITY_ROWS
+    FROM {{ ref('arbitrage_fixture') }}
+
+)
+
+SELECT *
+FROM fixture_stats
+WHERE TOTAL_ROWS <> 11
+   OR NULL_PRICE_ROWS <> 1
+   OR NULL_QUANTITY_ROWS <> 1

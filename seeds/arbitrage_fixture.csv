@@ -1,0 +1,12 @@
+COMMODITY_NAME,CATEGORY,PRICE,QUANTITY,LOCATION,RECORDED_AT
+Mangoes,Fruits,120,50,Chennai,2026-11-24 09:00:00
+Mangoes,Fruits,130,60,Chennai,2026-11-25 09:00:00
+Mangoes,Fruits,150,80,Madurai,2026-11-25 09:00:00
+Rice,Grains,55,100,Salem,2026-11-25 08:00:00
+Rice,Grains,60,120,Coimbatore,2026-11-25 08:00:00
+Tomatoes,Vegetables,30,90,Chennai,2026-11-25 10:00:00
+Tomatoes,Vegetables,40,70,Madurai,2026-11-25 10:00:00
+Bananas,Fruits,50,100,Trichy,2026-11-25 11:00:00
+Bananas,Fruits,65,100,Chennai,2026-11-25 11:00:00
+Wheat,Grains,,80,Salem,2026-11-25 12:00:00
+Wheat,Grains,45,,Madurai,2026-11-25 12:00:00

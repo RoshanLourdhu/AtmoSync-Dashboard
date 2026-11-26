@@ -1,0 +1,25 @@
+SELECT *
+FROM {{ ref('fct_commodity_arbitrage') }}
+WHERE
+       PRICE_DIFFERENCE IS DISTINCT FROM (SELL_PRICE - BUY_PRICE)
+
+    OR ARBITRAGE_PERCENTAGE IS DISTINCT FROM
+       ROUND(
+           ((SELL_PRICE - BUY_PRICE) / NULLIF(BUY_PRICE, 0)) * 100,
+           2
+       )
+
+    OR ESTIMATED_GROSS_PROFIT IS DISTINCT FROM
+       ROUND(
+           (SELL_PRICE - BUY_PRICE) * TRADEABLE_QUANTITY,
+           2
+       )
+
+    OR TRADEABLE_QUANTITY IS DISTINCT FROM
+       LEAST(BUY_QUANTITY, SELL_QUANTITY)
+
+    OR ARBITRAGE_STATUS IS DISTINCT FROM
+       CASE
+           WHEN SELL_PRICE > BUY_PRICE THEN 'Opportunity'
+           ELSE 'No Opportunity'
+       END

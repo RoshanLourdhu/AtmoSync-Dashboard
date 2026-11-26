@@ -1,7 +1,0 @@
-SELECT
-    COMMODITY_ID,
-    COMMODITY_NAME,
-    QUANTITY
-FROM {{ ref('stg_commodity') }}
-WHERE QUANTITY <= 0
-   OR QUANTITY IS NULL
