@@ -225,18 +225,38 @@ To help monitor daily branch-level participation across the team, AtmoSync inclu
 
 ---
 
-## 10. Mid-Project Review Acceptance Checks
+## 10. Mid-Project Review Acceptance Checks & Local Runtime
 
-To validate Mid-Review readiness across Kafka streaming, dbt staging, Snowflake, and Superset without fabricating live metrics, run:
+### Python 3.11 Virtual Environment Setup (Required)
+Use **Python 3.11** (validated on `3.11.9`; avoid Python 3.13 where native dependencies may not be installed or compatible):
 
-```bash
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+> **Windows WDAC Note:** If Windows Application Control blocks native `.pyd` extensions (such as `pandas._libs.tslibs.period` or `sf_core_python`), run the streaming/analytics suite inside **WSL2 / Ubuntu Linux** with Python 3.11.
+
+### Local Docker Services (Kafka & Superset)
+```powershell
+# Start local KRaft Kafka broker and auto-create topic 'container-sensor-data'
+docker compose -f docker-compose.kafka.yml up -d
+
+# Start Apache Superset stack (PostgreSQL, Redis, Superset on port 8088)
+docker compose -f dashboard/docker-compose.yml up -d
+```
+
+### Verification Commands
+```powershell
 # Offline & live-aware acceptance runner (reports PASS, FAIL, BLOCKED, NOT_RUN)
 python scripts/mid_review_readiness.py
 
 # Offline-only mode (skips Kafka/Snowflake/Superset live probes)
 python scripts/mid_review_readiness.py --offline
 
-# Live Kafka throughput & consumer lag benchmark
+# Live Kafka throughput & consumer lag benchmark (requires Kafka on localhost:9092)
 python scripts/benchmark_kafka_pipeline.py --messages 500 --batch-size 100
 ```
 

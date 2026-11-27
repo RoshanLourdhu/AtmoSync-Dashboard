@@ -548,3 +548,70 @@ def test_consumer_structured_logging(
     assert "Successfully inserted 1 event(s) into Snowflake" in logs
     assert "Kafka offset commit succeeded" in logs
     assert "SensorKafkaConsumer shutdown complete" in logs
+
+
+def test_consumer_import_does_not_eagerly_require_snowflake_connector() -> None:
+    """Importing streaming.consumer.consumer must succeed even if snowflake.connector is blocked."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; "
+        "sys.modules['snowflake.connector'] = None; "
+        "from streaming.consumer.consumer import ConsumerConfig, SensorKafkaConsumer; "
+        "print('OK')"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, f"Consumer import failed when snowflake.connector blocked: {proc.stderr}"
+    assert "OK" in proc.stdout
+
+
+def test_consumer_supports_injected_event_ingestor_without_snowflake(
+    valid_sensor_event_dict: dict[str, Any],
+) -> None:
+    """Dependency-injected event_ingestor persists valid events without touching Snowflake."""
+    mock_kconsumer = MagicMock()
+    captured: list[Any] = []
+
+    def fake_ingestor(events: list[Any], conn: Any) -> bool:
+        captured.extend(events)
+        return True
+
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(batch_size=5),
+        kafka_consumer=mock_kconsumer,
+        event_ingestor=fake_ingestor,
+    )
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=201)
+    result = consumer.process_batch([msg])
+
+    assert result.valid_count == 1
+    assert result.inserted_into_snowflake is True
+    assert result.committed is True
+    assert len(captured) == 1
+    mock_kconsumer.commit.assert_called_once_with(asynchronous=False)
+
+
+def test_consumer_raises_clear_error_when_snowflake_requested_but_unavailable(
+    valid_sensor_event_dict: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When Snowflake persistence is needed without an injected ingestor, missing Snowflake raises clearly."""
+    import streaming.consumer.consumer as consumer_mod
+
+    monkeypatch.setattr(consumer_mod, "insert_sensor_events", None)
+
+    def fail_resolve() -> tuple[Any, str, type[Exception]]:
+        raise KafkaConsumerError("Snowflake persistence requested, but snowflake.ingestion could not be imported")
+
+    monkeypatch.setattr(consumer_mod, "_resolve_snowflake_ingestion_api", fail_resolve)
+
+    mock_kconsumer = MagicMock()
+    consumer = SensorKafkaConsumer(
+        config=ConsumerConfig(batch_size=5),
+        kafka_consumer=mock_kconsumer,
+    )
+    msg = MockKafkaMessage(json.dumps(valid_sensor_event_dict), offset=202)
+    with pytest.raises(KafkaConsumerError, match="Snowflake persistence requested"):
+        consumer.process_batch([msg])
+    mock_kconsumer.commit.assert_not_called()

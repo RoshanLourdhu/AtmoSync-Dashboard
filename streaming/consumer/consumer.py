@@ -19,7 +19,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 try:
     from confluent_kafka import Consumer, KafkaError, KafkaException, Message
@@ -30,12 +30,61 @@ except ImportError:  # pragma: no cover
     Message = Any
 
 from shared.validation import SensorValidationError, validate_sensor_event
-from snowflake.connection import SnowflakeConnectionError, get_snowflake_connection
-from snowflake.ingestion import (
-    RAW_SENSOR_TABLE,
-    SnowflakeIngestionError,
-    insert_sensor_events,
-)
+
+# Optional Snowflake persistence attributes: lazily imported on demand so
+# Kafka consumer imports and non-Snowflake usage never fail when snowflake-connector
+# is absent or blocked. Tests can still patch these module attributes directly.
+RAW_SENSOR_TABLE = "ATMOSYNC_DB.RAW.SENSOR_READINGS"
+get_snowflake_connection: Any = None
+insert_sensor_events: Any = None
+
+
+class SnowflakeConnectionError(Exception):
+    """Fallback exception when snowflake.connection is not yet loaded."""
+
+
+class SnowflakeIngestionError(Exception):
+    """Fallback exception when snowflake.ingestion is not yet loaded."""
+
+
+def _resolve_snowflake_connection_api() -> tuple[Any, type[Exception]]:
+    """Lazily import snowflake.connection when Snowflake connectivity is actually required."""
+    global get_snowflake_connection, SnowflakeConnectionError
+    if get_snowflake_connection is not None:
+        return get_snowflake_connection, SnowflakeConnectionError
+    try:
+        from snowflake.connection import (
+            SnowflakeConnectionError as _SFConnError,
+            get_snowflake_connection as _get_sf_conn,
+        )
+    except Exception as exc:
+        raise KafkaConsumerError(
+            f"Snowflake persistence requested, but snowflake.connection could not be imported: {exc}"
+        ) from exc
+    get_snowflake_connection = _get_sf_conn
+    SnowflakeConnectionError = _SFConnError
+    return get_snowflake_connection, SnowflakeConnectionError
+
+
+def _resolve_snowflake_ingestion_api() -> tuple[Any, str, type[Exception]]:
+    """Lazily import snowflake.ingestion when batch persistence is actually required."""
+    global insert_sensor_events, RAW_SENSOR_TABLE, SnowflakeIngestionError
+    if insert_sensor_events is not None:
+        return insert_sensor_events, RAW_SENSOR_TABLE, SnowflakeIngestionError
+    try:
+        from snowflake.ingestion import (
+            RAW_SENSOR_TABLE as _RAW_TABLE,
+            SnowflakeIngestionError as _SFIngestError,
+            insert_sensor_events as _insert_events,
+        )
+    except Exception as exc:
+        raise KafkaConsumerError(
+            f"Snowflake persistence requested, but snowflake.ingestion could not be imported: {exc}"
+        ) from exc
+    insert_sensor_events = _insert_events
+    RAW_SENSOR_TABLE = _RAW_TABLE
+    SnowflakeIngestionError = _SFIngestError
+    return insert_sensor_events, RAW_SENSOR_TABLE, SnowflakeIngestionError
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +170,12 @@ class SensorKafkaConsumer:
         *,
         kafka_consumer: Any = None,
         snowflake_connection: Any = None,
+        event_ingestor: Callable[[list[tuple[dict[str, Any], str, int, int]], Any], bool] | None = None,
     ) -> None:
         self.config = config or ConsumerConfig.from_env()
         self._external_snowflake_conn = snowflake_connection is not None
         self._snowflake_conn = snowflake_connection
+        self._event_ingestor = event_ingestor
 
         logger.info(
             "Initializing SensorKafkaConsumer: topic='%s', group_id='%s', batch_size=%d, auto_offset_reset='%s', poll_timeout=%.1fs",
@@ -177,12 +228,15 @@ class SensorKafkaConsumer:
     def _get_snowflake_conn(self) -> Any:
         """Retrieves active Snowflake connection, establishing a new one if not connected."""
         if self._snowflake_conn is None:
+            conn_fn, conn_err_cls = _resolve_snowflake_connection_api()
             try:
-                self._snowflake_conn = get_snowflake_connection()
+                self._snowflake_conn = conn_fn()
                 logger.info("Established fresh Snowflake connection for batch ingestion.")
             except Exception as exc:
                 logger.error("Failed to connect to Snowflake: %s", exc)
-                raise SnowflakeConnectionError(f"Snowflake connection failed: {exc}") from exc
+                if isinstance(exc, conn_err_cls) or type(exc).__name__ == "SnowflakeConnectionError":
+                    raise
+                raise conn_err_cls(f"Snowflake connection failed: {exc}") from exc
         return self._snowflake_conn
 
     def deserialize_and_validate(
@@ -317,34 +371,49 @@ class SensorKafkaConsumer:
         # Database Insertion & Offset Commit Decision
         inserted_into_snowflake = False
         if valid_tuples:
-            logger.info(
-                "Starting Snowflake batch ingestion for %d valid event(s) into %s",
-                len(valid_tuples),
-                RAW_SENSOR_TABLE,
-            )
-            try:
-                conn = self._get_snowflake_conn()
-                inserted_into_snowflake = insert_sensor_events(
-                    events=valid_tuples,
-                    connection=conn,
-                )
-                logger.info(
-                    "Successfully inserted %d event(s) into Snowflake table %s",
-                    len(valid_tuples),
-                    RAW_SENSOR_TABLE,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Snowflake batch ingestion failed (%d events). Offsets WILL NOT be committed. Error: %s",
-                    len(valid_tuples),
-                    exc,
-                )
-                self._reset_snowflake_conn()
-                if isinstance(exc, (SnowflakeConnectionError, SnowflakeIngestionError)):
+            if self._event_ingestor is not None:
+                try:
+                    inserted_into_snowflake = self._event_ingestor(valid_tuples, self._snowflake_conn)
+                except Exception as exc:
+                    logger.error(
+                        "Injected event ingestor failed (%d events). Offsets WILL NOT be committed. Error: %s",
+                        len(valid_tuples),
+                        exc,
+                    )
                     raise
-                raise SnowflakeIngestionError(
-                    f"Snowflake batch ingestion failed: {exc}"
-                ) from exc
+            else:
+                ingest_fn, raw_table, ingest_err_cls = _resolve_snowflake_ingestion_api()
+                logger.info(
+                    "Starting Snowflake batch ingestion for %d valid event(s) into %s",
+                    len(valid_tuples),
+                    raw_table,
+                )
+                try:
+                    conn = self._get_snowflake_conn()
+                    inserted_into_snowflake = ingest_fn(
+                        events=valid_tuples,
+                        connection=conn,
+                    )
+                    logger.info(
+                        "Successfully inserted %d event(s) into Snowflake table %s",
+                        len(valid_tuples),
+                        raw_table,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Snowflake batch ingestion failed (%d events). Offsets WILL NOT be committed. Error: %s",
+                        len(valid_tuples),
+                        exc,
+                    )
+                    self._reset_snowflake_conn()
+                    if (
+                        isinstance(exc, (SnowflakeConnectionError, SnowflakeIngestionError, ingest_err_cls))
+                        or type(exc).__name__ in ("SnowflakeConnectionError", "SnowflakeIngestionError")
+                    ):
+                        raise
+                    raise ingest_err_cls(
+                        f"Snowflake batch ingestion failed: {exc}"
+                    ) from exc
         elif invalid_records:
             logger.warning(
                 "Batch contains ONLY invalid records (%d events). Acknowledging poison pills without DB operations.",

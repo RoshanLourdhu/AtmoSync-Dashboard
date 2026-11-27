@@ -147,7 +147,7 @@ def compute_benchmark_metrics(
 
 def _compute_partition_lag(consumer_obj: Any, topic: str) -> int | None:
     """Calculate total remaining lag across assigned partitions using broker watermarks."""
-    raw_consumer = getattr(consumer_obj, "_consumer", None)
+    raw_consumer = getattr(consumer_obj, "consumer", None) or getattr(consumer_obj, "_consumer", None)
     if raw_consumer is None:
         return None
     try:
@@ -198,7 +198,6 @@ def run_kafka_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     producer_cfg = ProducerConfig(
         bootstrap_servers=config.bootstrap_servers,
         topic=config.topic,
-        batch_size=config.batch_size,
     )
     consumer_cfg = ConsumerConfig(
         bootstrap_servers=config.bootstrap_servers,
