@@ -1,3 +1,4 @@
+
 import unittest
 import yaml
 import subprocess
@@ -209,6 +210,36 @@ class TestDashboardConfigValidator(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "empty.yaml"
             config_path.write_text("", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(validator_path),
+                    "--config",
+                    str(config_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(
+                "YAML configuration must contain a mapping",
+                result.stdout,
+            )
+
+    def test_cli_yaml_list_root(self):
+        validator_path = (
+            Path(__file__).resolve().parent
+            / "dashboard_config_validator.py"
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "list_root.yaml"
+            config_path.write_text(
+                "- SENSOR_DATA\n- TEMPERATURE\n",
+                encoding="utf-8",
+            )
 
             result = subprocess.run(
                 [
