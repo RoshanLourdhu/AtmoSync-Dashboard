@@ -9,15 +9,33 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any, Iterable
 from urllib.parse import parse_qs, urlparse
 
+ALLOWED_PRICE_STATUSES = ("High Price", "Medium Price", "Low Price")
 ALLOWED_STOCK_STATUSES = ("Low Stock", "Medium Stock", "Available Stock")
+
+COMMODITY_BASE_PRICES: dict[str, float] = {
+    "mrna vaccines": 145.0,
+    "vaccines": 140.0,
+    "biologics": 135.0,
+    "pharmaceuticals": 120.0,
+    "frozen seafood": 85.0,
+    "seafood": 80.0,
+    "organic berries": 62.0,
+    "dairy": 48.0,
+    "dairy milk": 42.0,
+    "fresh apples": 36.0,
+    "fresh produce": 34.0,
+}
 
 DBT_STAGING_FIELDS = (
     "COMMODITY_ID",
-    "COMMODITY",
+    "COMMODITY_NAME",
+    "PRICE",
+    "PRICE_STATUS",
     "QUANTITY",
     "STOCK_STATUS",
     "CONTAINER_ID",
@@ -29,27 +47,60 @@ DBT_STAGING_FIELDS = (
     "SENSOR_STATUS",
     "ANOMALY_TYPE",
     "EVENT_ID",
-    "TIMESTAMP_UTC",
+    "RECORDED_AT",
 )
 
 
+def derive_commodity_price(commodity: str) -> float:
+    """Return a deterministic positive unit price for a commodity."""
+    normalized = str(commodity).strip().lower()
+    if normalized in COMMODITY_BASE_PRICES:
+        return COMMODITY_BASE_PRICES[normalized]
+    checksum = sum(ord(ch) for ch in normalized) % 121
+    return round(25.0 + float(checksum), 2)
+
+
+def classify_price_status(price: float) -> str:
+    """Map unit price into dbt fct_commodity_condition.sql PRICE_STATUS tiers."""
+    val = float(price)
+    if val >= 100.0:
+        return "High Price"
+    if val >= 50.0:
+        return "Medium Price"
+    return "Low Price"
+
+
 def classify_stock_status(quantity_kg: float) -> str:
-    """Map container quantity_kg into dbt schema.yml accepted STOCK_STATUS tiers."""
+    """Map container quantity_kg into dbt fct_commodity_condition.sql STOCK_STATUS tiers."""
     qty = float(quantity_kg)
-    if qty < 250.0:
+    if qty <= 10.0:
         return "Low Stock"
-    if qty < 750.0:
+    if qty <= 50.0:
         return "Medium Stock"
     return "Available Stock"
+
+
+def _make_commodity_id(event: dict[str, Any]) -> str:
+    if event.get("commodity_id"):
+        return str(event["commodity_id"])
+    slug = re.sub(r"[^A-Z0-9]+", "-", str(event["commodity"]).upper()).strip("-")
+    return f"CMD-{slug or 'UNKNOWN'}"
 
 
 def to_dbt_commodity_row(event: dict[str, Any]) -> dict[str, Any]:
     """Transform a 12-field telemetry payload into a Snowflake/dbt staging record."""
     quantity = round(float(event["quantity_kg"]), 2)
     commodity = str(event["commodity"])
+    price = (
+        round(float(event["price"]), 2)
+        if event.get("price") is not None
+        else derive_commodity_price(commodity)
+    )
     return {
-        "COMMODITY_ID": commodity,
-        "COMMODITY": commodity,
+        "COMMODITY_ID": _make_commodity_id(event),
+        "COMMODITY_NAME": commodity,
+        "PRICE": price,
+        "PRICE_STATUS": classify_price_status(price),
         "QUANTITY": quantity,
         "STOCK_STATUS": classify_stock_status(quantity),
         "CONTAINER_ID": str(event["container_id"]),
@@ -61,8 +112,33 @@ def to_dbt_commodity_row(event: dict[str, Any]) -> dict[str, Any]:
         "SENSOR_STATUS": str(event["sensor_status"]),
         "ANOMALY_TYPE": str(event["anomaly_type"]),
         "EVENT_ID": str(event["event_id"]),
-        "TIMESTAMP_UTC": str(event["timestamp_utc"]),
+        "RECORDED_AT": str(event["timestamp_utc"]),
     }
+
+
+def validate_dbt_commodity_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Validate transformed rows against schema.yml and dbt singular assertions."""
+    errors: list[str] = []
+    required_not_null = (
+        "COMMODITY_ID",
+        "PRICE",
+        "PRICE_STATUS",
+        "QUANTITY",
+        "STOCK_STATUS",
+    )
+    for idx, row in enumerate(rows):
+        for col in required_not_null:
+            if row.get(col) is None or str(row.get(col)).strip() == "":
+                errors.append(f"Row {idx}: {col} is null/empty")
+        if float(row.get("PRICE", 0)) <= 0:
+            errors.append(f"Row {idx}: PRICE must be > 0")
+        if float(row.get("QUANTITY", 0)) <= 0:
+            errors.append(f"Row {idx}: QUANTITY must be > 0")
+        if row.get("PRICE_STATUS") not in ALLOWED_PRICE_STATUSES:
+            errors.append(f"Row {idx}: invalid PRICE_STATUS={row.get('PRICE_STATUS')}")
+        if row.get("STOCK_STATUS") not in ALLOWED_STOCK_STATUSES:
+            errors.append(f"Row {idx}: invalid STOCK_STATUS={row.get('STOCK_STATUS')}")
+    return errors
 
 
 class TelemetrySQLiteSink:

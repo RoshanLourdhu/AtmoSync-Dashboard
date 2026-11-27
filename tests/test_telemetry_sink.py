@@ -14,23 +14,26 @@ from urllib.request import urlopen
 
 import kafka_consumer
 from telemetry_sink import (
+    ALLOWED_PRICE_STATUSES,
     ALLOWED_STOCK_STATUSES,
     DBT_STAGING_FIELDS,
     TelemetrySQLiteSink,
+    classify_price_status,
     classify_stock_status,
     create_api_server,
     to_dbt_commodity_row,
+    validate_dbt_commodity_rows,
 )
 
 
 def _sample_event(
     event_id: str = "EV000101",
-    timestamp_utc: str = "2026-11-26T09:00:00Z",
+    timestamp_utc: str = "2026-11-27T09:00:00Z",
     container_id: str = "C001",
     commodity: str = "Fresh Apples",
     origin: str = "Chennai-Hub",
     destination: str = "Bengaluru-DC",
-    quantity_kg: float = 500.0,
+    quantity_kg: float = 40.0,
     temperature_c: float = 4.2,
     humidity_pct: float = 84.5,
     vibration_g: float = 0.12,
@@ -62,7 +65,7 @@ class TestTelemetrySink(unittest.TestCase):
                 event_id="EV000002",
                 container_id="C002",
                 commodity="mRNA Vaccines",
-                quantity_kg=180.0,
+                quantity_kg=8.0,
                 temperature_c=11.4,
                 sensor_status="ALERT",
                 anomaly_type="DOOR_OPEN",
@@ -78,16 +81,29 @@ class TestTelemetrySink(unittest.TestCase):
             self.assertEqual(alerts[0]["event_id"], "EV000002")
             self.assertEqual(alerts[0]["anomaly_type"], "DOOR_OPEN")
 
-    def test_dbt_stock_status_classification_matches_schema_yml(self) -> None:
-        self.assertEqual(classify_stock_status(100.0), "Low Stock")
-        self.assertEqual(classify_stock_status(250.0), "Medium Stock")
-        self.assertEqual(classify_stock_status(749.9), "Medium Stock")
-        self.assertEqual(classify_stock_status(750.0), "Available Stock")
+    def test_dbt_price_and_stock_classification_matches_fct_model(self) -> None:
+        self.assertEqual(classify_stock_status(10.0), "Low Stock")
+        self.assertEqual(classify_stock_status(10.1), "Medium Stock")
+        self.assertEqual(classify_stock_status(50.0), "Medium Stock")
+        self.assertEqual(classify_stock_status(50.1), "Available Stock")
 
-        for qty in (0.0, 249.9, 250.0, 500.0, 750.0, 1200.0):
-            row = to_dbt_commodity_row(_sample_event(quantity_kg=qty))
-            self.assertIn(row["STOCK_STATUS"], ALLOWED_STOCK_STATUSES)
-            self.assertEqual(row["COMMODITY_ID"], "Fresh Apples")
+        self.assertEqual(classify_price_status(49.99), "Low Price")
+        self.assertEqual(classify_price_status(50.0), "Medium Price")
+        self.assertEqual(classify_price_status(99.99), "Medium Price")
+        self.assertEqual(classify_price_status(100.0), "High Price")
+
+        rows = [
+            to_dbt_commodity_row(_sample_event(commodity="Fresh Apples", quantity_kg=8.0)),
+            to_dbt_commodity_row(_sample_event(commodity="Frozen Seafood", quantity_kg=35.0)),
+            to_dbt_commodity_row(_sample_event(commodity="mRNA Vaccines", quantity_kg=120.0)),
+        ]
+        self.assertEqual(validate_dbt_commodity_rows(rows), [])
+        self.assertEqual(rows[0]["PRICE_STATUS"], "Low Price")
+        self.assertEqual(rows[0]["STOCK_STATUS"], "Low Stock")
+        self.assertEqual(rows[1]["PRICE_STATUS"], "Medium Price")
+        self.assertEqual(rows[1]["STOCK_STATUS"], "Medium Stock")
+        self.assertEqual(rows[2]["PRICE_STATUS"], "High Price")
+        self.assertEqual(rows[2]["STOCK_STATUS"], "Available Stock")
 
     def test_export_dbt_staging_csv(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -95,8 +111,8 @@ class TestTelemetrySink(unittest.TestCase):
             sink = TelemetrySQLiteSink(base / "telemetry.db")
             sink.write_batch(
                 [
-                    _sample_event(event_id="EV000010", commodity="Dairy Milk", quantity_kg=120.0),
-                    _sample_event(event_id="EV000011", commodity="Frozen Seafood", quantity_kg=900.0),
+                    _sample_event(event_id="EV000010", commodity="Dairy Milk", quantity_kg=9.0),
+                    _sample_event(event_id="EV000011", commodity="mRNA Vaccines", quantity_kg=90.0),
                 ]
             )
             csv_path = base / "dbt_staging.csv"
@@ -107,8 +123,11 @@ class TestTelemetrySink(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 2)
             self.assertEqual(tuple(rows[0].keys()), DBT_STAGING_FIELDS)
+            self.assertEqual(validate_dbt_commodity_rows(rows), [])
             self.assertEqual(rows[0]["STOCK_STATUS"], "Low Stock")
+            self.assertEqual(rows[0]["PRICE_STATUS"], "Low Price")
             self.assertEqual(rows[1]["STOCK_STATUS"], "Available Stock")
+            self.assertEqual(rows[1]["PRICE_STATUS"], "High Price")
 
     def test_rest_api_bridge_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -119,14 +138,14 @@ class TestTelemetrySink(unittest.TestCase):
                     _sample_event(
                         event_id="EV000021",
                         container_id="C001",
-                        commodity="Fresh Apples",
-                        quantity_kg=300.0,
+                        commodity="Frozen Seafood",
+                        quantity_kg=30.0,
                     ),
                     _sample_event(
                         event_id="EV000022",
                         container_id="C002",
                         commodity="mRNA Vaccines",
-                        quantity_kg=110.0,
+                        quantity_kg=8.0,
                         temperature_c=-99.9,
                         sensor_status="FAULT",
                         anomaly_type="SENSOR_DROPOUT",
@@ -158,7 +177,10 @@ class TestTelemetrySink(unittest.TestCase):
                 with urlopen(f"{base_url}/api/commodities") as resp:
                     commodities = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(commodities["count"], 2)
+                self.assertEqual(validate_dbt_commodity_rows(commodities["commodities"]), [])
+                self.assertEqual(commodities["commodities"][0]["PRICE_STATUS"], "Medium Price")
                 self.assertEqual(commodities["commodities"][0]["STOCK_STATUS"], "Medium Stock")
+                self.assertEqual(commodities["commodities"][1]["PRICE_STATUS"], "High Price")
                 self.assertEqual(commodities["commodities"][1]["STOCK_STATUS"], "Low Stock")
 
                 with self.assertRaises(HTTPError) as ctx:
@@ -196,8 +218,10 @@ class TestTelemetrySink(unittest.TestCase):
             with csv_path.open("r", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 5)
+            self.assertEqual(validate_dbt_commodity_rows(rows), [])
             for row in rows:
                 self.assertIn(row["STOCK_STATUS"], ALLOWED_STOCK_STATUSES)
+                self.assertIn(row["PRICE_STATUS"], ALLOWED_PRICE_STATUSES)
 
     def test_run_consumer_with_mock_records_persists_idempotently(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
