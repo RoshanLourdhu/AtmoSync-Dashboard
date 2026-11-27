@@ -225,7 +225,26 @@ To help monitor daily branch-level participation across the team, AtmoSync inclu
 
 ---
 
-## 10. Documentation Index
+## 10. Mid-Project Review Acceptance Checks
+
+To validate Mid-Review readiness across Kafka streaming, dbt staging, Snowflake, and Superset without fabricating live metrics, run:
+
+```bash
+# Offline & live-aware acceptance runner (reports PASS, FAIL, BLOCKED, NOT_RUN)
+python scripts/mid_review_readiness.py
+
+# Offline-only mode (skips Kafka/Snowflake/Superset live probes)
+python scripts/mid_review_readiness.py --offline
+
+# Live Kafka throughput & consumer lag benchmark
+python scripts/benchmark_kafka_pipeline.py --messages 500 --batch-size 100
+```
+
+See [docs/mid_review_readiness.md](docs/mid_review_readiness.md) for the complete requirement-to-check mapping and [docs/development_reports/mid_review_branch_integration_2026-11-27.md](docs/development_reports/mid_review_branch_integration_2026-11-27.md) for the November 27 branch audit.
+
+---
+
+## 11. Documentation Index
 
 - [Project Overview](docs/project_overview.md) — Scope, technology stack, and objectives.
 - [System Architecture](docs/system_architecture.md) — Pipeline components and data flow.

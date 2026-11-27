@@ -18,10 +18,10 @@ This document provides a live tracking matrix of all platform components, design
 | **Snowflake Ingestion Engine** | Roshan | `snowflake/` | Complete (`ingestion.py`, `connection.py`) | 25 tests (`tests/test_snowflake_*.py`) | DDL ready; pending live Snowflake account |
 | **dbt Analytics & Data Quality** | Nisha / Roshan integration | `dbt_analytics/` | Complete (`stg_sensor_readings.sql`, `fct_sensor_data_quality.sql`, marts) | 10 tests (`tests/test_dbt_and_dashboard_integration.py`) | Modern dbt 1.12 syntax; pending live warehouse run |
 | **Superset Dashboard Stack** | Navya / Roshan integration | `dashboard/` | Complete (`docker-compose.yml`, driver specs, DQ metrics, config CLI validator) | 7 tests (`tests/test_dbt_and_dashboard_integration.py`) | Pending Docker Compose container launch |
-| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`smoke_test_pipeline_e2e.py`, `test_pipeline_smoke.py`, `verify_pipeline_e2e.py`) | 14 tests (`tests/integration/test_pipeline_smoke.py`, `tests/test_pipeline_e2e_integration.py`) | Verified through automated dual-mode 10-stage smoke test harness (simulation & live) |
-| **CI Automation** | Roshan | `.github/workflows/` | Complete (`pipeline_ci.yml`, `test_ci_workflow.py`) | 3 tests (`tests/test_ci_workflow.py`) | Automated multi-stage GitHub Actions verification on push/PR |
+| **Pipeline E2E Integration** | Roshan | `tests/` & `scripts/` | Complete (`smoke_test_pipeline_e2e.py`, `benchmark_kafka_pipeline.py`, `mid_review_readiness.py`, `verify_pipeline_e2e.py`) | 22 tests (`tests/integration/test_pipeline_smoke.py`, `tests/test_pipeline_e2e_integration.py`, `tests/test_mid_review_readiness.py`) | Verified through 10-stage smoke test and Mid-Review acceptance runner (`PASS`/`FAIL`/`BLOCKED`/`NOT_RUN`) |
+| **CI Automation** | Roshan | `.github/workflows/` | Complete (`pipeline_ci.yml`, `test_ci_workflow.py`) | 4 tests (`tests/test_ci_workflow.py`) | Automated multi-stage GitHub Actions verification with concurrency & JUnit summaries |
 
-**Total Automated Tests:** 176 passing offline unit and integration tests (100% pass rate).
+**Total Automated Tests:** See `docs/mid_review_readiness.md` and latest `pytest` run on `roshan` (includes 13 contribution-day audit tests, 5 new Navya dashboard validator tests, and 8 Mid-Review readiness tests).
 
 ---
 

@@ -1,3 +1,6 @@
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 import yaml
@@ -106,6 +109,53 @@ class TestDashboardConfigValidator(unittest.TestCase):
         self.assertIn(result["summary"]["validated_metrics"], [19, 20])
         self.assertIn(result["summary"]["validated_charts"], [12, 15])
         self.assertEqual(result["summary"]["validated_filters"], 4)
+
+    def test_empty_configuration(self):
+        result = validate_dashboard_config({})
+        self.assertEqual(result["status"], "Failed")
+        self.assertTrue(result["errors"])
+
+    def test_missing_dashboard_sections(self):
+        result = validate_dashboard_config({"datasets": []})
+        self.assertEqual(result["status"], "Failed")
+        self.assertIn("Missing required configuration section: charts.", result["errors"])
+        self.assertIn("Missing required configuration section: filters.", result["errors"])
+
+    def test_cli_missing_config_file(self):
+        validator_path = Path(__file__).resolve().parent / "dashboard_config_validator.py"
+        result = subprocess.run(
+            [sys.executable, str(validator_path), "--config", "missing_config.yaml"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Configuration file not found", result.stdout)
+
+    def test_cli_invalid_yaml_file(self):
+        validator_path = Path(__file__).resolve().parent / "dashboard_config_validator.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "invalid.yaml"
+            config_path.write_text("datasets: [invalid", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(validator_path), "--config", str(config_path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Invalid YAML configuration", result.stdout)
+
+    def test_cli_empty_yaml_file(self):
+        validator_path = Path(__file__).resolve().parent / "dashboard_config_validator.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "empty.yaml"
+            config_path.write_text("", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(validator_path), "--config", str(config_path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("YAML configuration must contain a mapping", result.stdout)
 
 
 if __name__ == "__main__":

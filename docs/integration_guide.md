@@ -7,8 +7,8 @@ Interfaces in this guide have been fully implemented, integrated, and validated 
 - **Kafka Consumer & Ingestion:** Resilient batch ingestion into Snowflake RAW (`ATMOSYNC_DB.RAW.SENSOR_READINGS_RAW`), transactional rollback, dead-letter quarantine, and strict offset commit safety.
 - **dbt Analytics & Quality Monitoring:** Models implemented for `stg_sensor_readings`, `fct_spoilage_risk`, `fct_arbitrage_readiness`, and `fct_sensor_data_quality`.
 - **Superset Dashboard Stack & Data Quality:** Declarative dataset/chart specifications in `dashboard/dashboards/datasets_and_charts.yaml`, containerized docker compose stack, standalone data quality suite with Plotly visualization, dashboard filter validator (`filter_validator.py`), and full configuration validator (`dashboard_config_validator.py`).
-- **End-to-End Pipeline Verification Tooling:** Multi-stage pipeline validation test suite (`verify_pipeline_e2e.py`) and repeatable dual-mode 10-stage traceable smoke test CLI (`scripts/smoke_test_pipeline_e2e.py`, `tests/integration/test_pipeline_smoke.py`) supporting deterministic offline simulation (`--mode simulation`) and strict live infrastructure integration (`--mode live`).
-- **Automated CI Workflow & Test Suite:** Production GitHub Actions CI (`.github/workflows/pipeline_ci.yml`) and 176 passing automated tests across the codebase (100% pass rate).
+- **End-to-End Pipeline Verification & Mid-Review Tooling:** Multi-stage pipeline validation test suite (`verify_pipeline_e2e.py`), repeatable dual-mode 10-stage traceable smoke test CLI (`scripts/smoke_test_pipeline_e2e.py`), Kafka throughput & consumer lag benchmark (`scripts/benchmark_kafka_pipeline.py`), and Mid-Review acceptance runner (`scripts/mid_review_readiness.py`). See [docs/mid_review_readiness.md](mid_review_readiness.md).
+- **Automated CI Workflow & Test Suite:** Production GitHub Actions CI (`.github/workflows/pipeline_ci.yml`) with concurrency cancellation, JUnit artifact upload, and `$GITHUB_STEP_SUMMARY` reporting.
 
 Remote branches present on `origin` are `main`, `roshan`, `sam-roshan`, `nisha`, and `navya`. Consolidated integration work is maintained on `roshan`.
 
