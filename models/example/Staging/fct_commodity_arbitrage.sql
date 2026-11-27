@@ -3,6 +3,7 @@ WITH commodity_prices AS (
     SELECT
         COMMODITY_NAME,
         CATEGORY,
+        TO_DATE(RECORDED_AT) AS RECORD_DATE,
         PRICE,
         QUANTITY,
         LOCATION
@@ -15,17 +16,17 @@ ranked_prices AS (
     SELECT
         *,
         ROW_NUMBER() OVER (
-            PARTITION BY COMMODITY_NAME
+            PARTITION BY COMMODITY_NAME, RECORD_DATE
             ORDER BY PRICE ASC, LOCATION
         ) AS BUY_RANK,
 
         ROW_NUMBER() OVER (
-            PARTITION BY COMMODITY_NAME
+            PARTITION BY COMMODITY_NAME, RECORD_DATE
             ORDER BY PRICE DESC, LOCATION
         ) AS SELL_RANK,
 
         COUNT(*) OVER (
-            PARTITION BY COMMODITY_NAME
+            PARTITION BY COMMODITY_NAME, RECORD_DATE
         ) AS LOCATION_COUNT
 
     FROM commodity_prices
@@ -51,6 +52,7 @@ sell_prices AS (
 SELECT
     b.COMMODITY_NAME,
     b.CATEGORY,
+    b.RECORD_DATE,
 
     b.LOCATION AS BUY_LOCATION,
     s.LOCATION AS SELL_LOCATION,
@@ -85,5 +87,6 @@ FROM buy_prices b
 
 JOIN sell_prices s
     ON b.COMMODITY_NAME = s.COMMODITY_NAME
+    AND b.RECORD_DATE = s.RECORD_DATE
 
 WHERE b.LOCATION_COUNT >= 2
