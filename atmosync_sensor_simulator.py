@@ -1,16 +1,73 @@
-import time
+import argparse
+import csv
 import json
+import os
 import random
+import time
 from datetime import datetime, timezone
-from kafka import KafkaProducer
+from kafka.errors import KafkaError
 
-KAFKA_TOPIC = "atmosync_sensor_events"
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+from kafka_producer import (
+    DEFAULT_BOOTSTRAP_SERVERS,
+    DEFAULT_TOPIC,
+    ProducerConfigError,
+    ProducerDeliveryError,
+    close_producer,
+    create_producer,
+    send_event,
+)
 
+
+CSV_FIELDNAMES = [
+    "event_id",
+    "timestamp_utc",
+    "container_id",
+    "commodity",
+    "origin",
+    "destination",
+    "quantity_kg",
+    "temperature_c",
+    "humidity_pct",
+    "vibration_g",
+    "sensor_status",
+    "anomaly_type",
+]
+KAFKA_TOPIC = DEFAULT_TOPIC
+KAFKA_BOOTSTRAP_SERVERS = DEFAULT_BOOTSTRAP_SERVERS
 CONTAINERS = [
-    {"container_id": "C001", "commodity": "Avocados", "origin": "Chennai", "destination": "Bengaluru", "quantity_kg": 1000, "temp_target": 5.5, "temp_max": 8.0},
-    {"container_id": "C002", "commodity": "Mangoes", "origin": "Chennai", "destination": "Hyderabad", "quantity_kg": 850, "temp_target": 8.0, "temp_max": 10.5},
-    {"container_id": "C003", "commodity": "Bananas", "origin": "Coimbatore", "destination": "Bengaluru", "quantity_kg": 1200, "temp_target": 13.0, "temp_max": 15.0},
+    {
+        "container_id": "C001",
+        "commodity": "Avocados",
+        "origin": "Chennai",
+        "destination": "Bengaluru",
+        "quantity_kg": 4200,
+        "temp_target": 5.5,
+        "temp_max": 7.5,
+        "humidity_target": 85.0,
+        "vibration_max": 0.35,
+    },
+    {
+        "container_id": "C002",
+        "commodity": "Mangoes",
+        "origin": "Chennai",
+        "destination": "Hyderabad",
+        "quantity_kg": 5000,
+        "temp_target": 8.0,
+        "temp_max": 10.5,
+        "humidity_target": 78.0,
+        "vibration_max": 0.35,
+    },
+    {
+        "container_id": "C003",
+        "commodity": "Bananas",
+        "origin": "Coimbatore",
+        "destination": "Bengaluru",
+        "quantity_kg": 4800,
+        "temp_target": 13.0,
+        "temp_max": 15.0,
+        "humidity_target": 82.0,
+        "vibration_max": 0.35,
+    },
 ]
 
 state = {
@@ -19,37 +76,144 @@ state = {
     "C003": {"temperature_c": 13.0, "humidity_pct": 82.0, "vibration_g": 0.18},
 }
 
+SCENARIO_DURATIONS = {
+    "COOLING_FAILURE": 6,
+    "DOOR_OPEN": 4,
+    "ROUGH_TRANSIT": 5,
+    "SENSOR_DROPOUT": 3,
+}
+
+active_scenarios = {
+    "C001": {"type": "NONE", "remaining": 0},
+    "C002": {"type": "NONE", "remaining": 0},
+    "C003": {"type": "NONE", "remaining": 0},
+}
+
+
 def clamp(value, low, high):
     return max(low, min(high, value))
 
-def generate_event(container, event_id_num):
+
+def _resolve_anomaly(cid, forced_scenario=None, target_container="ALL", anomaly_rate=0.18):
+    current = active_scenarios[cid]
+
+    if forced_scenario and forced_scenario != "NONE":
+        if target_container in ("ALL", cid):
+            if current["type"] != forced_scenario or current["remaining"] <= 0:
+                active_scenarios[cid] = {
+                    "type": forced_scenario,
+                    "remaining": SCENARIO_DURATIONS[forced_scenario],
+                }
+            active_scenarios[cid]["remaining"] -= 1
+            return forced_scenario
+        return "NONE"
+
+    if current["remaining"] > 0:
+        current["remaining"] -= 1
+        active_type = current["type"]
+        if current["remaining"] == 0:
+            active_scenarios[cid] = {"type": "NONE", "remaining": 0}
+        return active_type
+
+    if target_container in ("ALL", cid) and random.random() < anomaly_rate:
+        chosen = random.choices(
+            ["COOLING_FAILURE", "DOOR_OPEN", "ROUGH_TRANSIT", "SENSOR_DROPOUT"],
+            weights=[35, 25, 25, 15],
+        )[0]
+        active_scenarios[cid] = {
+            "type": chosen,
+            "remaining": SCENARIO_DURATIONS[chosen] - 1,
+        }
+        return chosen
+
+    return "NONE"
+
+
+def generate_event(
+    container,
+    event_id_num,
+    forced_scenario=None,
+    target_container="ALL",
+    anomaly_rate=0.18,
+):
     cid = container["container_id"]
     st = state[cid]
+    anomaly = _resolve_anomaly(cid, forced_scenario, target_container, anomaly_rate)
 
-    # Mean-reverting environmental drift + sensor noise
-    st["temperature_c"] += (container["temp_target"] - st["temperature_c"]) * 0.15 + random.uniform(-0.25, 0.3)
-    st["humidity_pct"] += random.uniform(-0.6, 0.6)
-    st["vibration_g"] += (0.15 - st["vibration_g"]) * 0.25 + random.uniform(-0.02, 0.03)
+    if anomaly == "COOLING_FAILURE":
+        st["temperature_c"] = clamp(
+            st["temperature_c"] + random.uniform(0.8, 1.4), -5.0, 35.0
+        )
+        st["humidity_pct"] = clamp(
+            st["humidity_pct"] + random.uniform(-0.4, 0.5), 40.0, 100.0
+        )
+        st["vibration_g"] = clamp(
+            st["vibration_g"] + (0.15 - st["vibration_g"]) * 0.25 + random.uniform(-0.02, 0.02),
+            0.01,
+            2.0,
+        )
+    elif anomaly == "DOOR_OPEN":
+        st["temperature_c"] = clamp(
+            st["temperature_c"] + random.uniform(0.7, 1.2), -5.0, 35.0
+        )
+        st["humidity_pct"] = clamp(
+            st["humidity_pct"] + random.uniform(2.0, 3.5), 40.0, 100.0
+        )
+        st["vibration_g"] = clamp(
+            st["vibration_g"] + random.uniform(-0.01, 0.03), 0.01, 2.0
+        )
+    elif anomaly == "ROUGH_TRANSIT":
+        st["temperature_c"] = clamp(
+            st["temperature_c"]
+            + (container["temp_target"] - st["temperature_c"]) * 0.15
+            + random.uniform(-0.2, 0.25),
+            -5.0,
+            35.0,
+        )
+        st["humidity_pct"] = clamp(
+            st["humidity_pct"]
+            + (container["humidity_target"] - st["humidity_pct"]) * 0.1
+            + random.uniform(-0.6, 0.6),
+            40.0,
+            100.0,
+        )
+        st["vibration_g"] = round(random.uniform(0.40, 0.65), 3)
+    else:
+        st["temperature_c"] = clamp(
+            st["temperature_c"]
+            + (container["temp_target"] - st["temperature_c"]) * 0.2
+            + random.uniform(-0.25, 0.25),
+            -5.0,
+            35.0,
+        )
+        st["humidity_pct"] = clamp(
+            st["humidity_pct"]
+            + (container["humidity_target"] - st["humidity_pct"]) * 0.15
+            + random.uniform(-0.6, 0.6),
+            40.0,
+            100.0,
+        )
+        st["vibration_g"] = clamp(
+            st["vibration_g"]
+            + (0.15 - st["vibration_g"]) * 0.3
+            + random.uniform(-0.02, 0.03),
+            0.01,
+            2.0,
+        )
 
-    # Inject realistic transport anomalies
-    anomaly = random.choices(
-        ["NONE", "TEMP_SPIKE", "HIGH_VIBRATION", "SENSOR_FAULT"],
-        weights=[82, 9, 6, 3]
-    )[0]
+    temp_out = -99.9 if anomaly == "SENSOR_DROPOUT" else round(st["temperature_c"], 2)
+    hum_out = -1.0 if anomaly == "SENSOR_DROPOUT" else round(st["humidity_pct"], 2)
+    vib_out = -1.0 if anomaly == "SENSOR_DROPOUT" else round(st["vibration_g"], 3)
 
-    if anomaly == "TEMP_SPIKE":
-        st["temperature_c"] += random.uniform(2.5, 4.5)
-    elif anomaly == "HIGH_VIBRATION":
-        st["vibration_g"] = random.uniform(0.32, 0.55)
-
-    st["temperature_c"] = round(clamp(st["temperature_c"], 1.0, 25.0), 2)
-    st["humidity_pct"] = round(clamp(st["humidity_pct"], 45.0, 98.0), 2)
-    st["vibration_g"] = round(clamp(st["vibration_g"], 0.02, 1.0), 3)
-
-    if anomaly == "SENSOR_FAULT":
+    if anomaly == "SENSOR_DROPOUT":
         status = "FAULT"
-    elif st["temperature_c"] > container["temp_max"] or st["vibration_g"] > 0.28:
+    elif (
+        temp_out > container["temp_max"]
+        or vib_out > container["vibration_max"]
+    ):
         status = "ALERT"
+    elif temp_out > (container["temp_max"] - 0.8) or anomaly != "NONE":
+        status = "WARNING"
     else:
         status = "NORMAL"
 
@@ -61,32 +225,147 @@ def generate_event(container, event_id_num):
         "origin": container["origin"],
         "destination": container["destination"],
         "quantity_kg": container["quantity_kg"],
-        "temperature_c": st["temperature_c"],
-        "humidity_pct": st["humidity_pct"],
-        "vibration_g": st["vibration_g"],
+        "temperature_c": temp_out,
+        "humidity_pct": hum_out,
+        "vibration_g": vib_out,
         "sensor_status": status,
+        "anomaly_type": anomaly,
     }
 
-def main():
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="AtmoSync Cold-Chain IoT Sensor Telemetry Simulator"
     )
-    print(f"Streaming improved telemetry to '{KAFKA_TOPIC}'...")
-    event_counter = 1
+    parser.add_argument(
+        "--scenario",
+        choices=["AUTO", "NONE", "COOLING_FAILURE", "DOOR_OPEN", "ROUGH_TRANSIT", "SENSOR_DROPOUT"],
+        default="AUTO",
+        help="Force a specific anomaly scenario or use AUTO for random anomalies (default: AUTO)",
+    )
+    parser.add_argument(
+        "--container",
+        choices=["ALL", "C001", "C002", "C003"],
+        default="ALL",
+        help="Target container for forced scenarios (default: ALL)",
+    )
+    parser.add_argument(
+        "--anomaly-rate",
+        type=float,
+        default=0.18,
+        help="Probability of triggering a new scenario per tick in random mode (default: 0.18)",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        help="Seconds to sleep between container telemetry batches (default: 1.0)",
+    )
+    parser.add_argument(
+        "--max-events",
+        type=int,
+        default=0,
+        help="Stop after publishing N events; 0 runs continuously (default: 0)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate and print events locally without connecting to Kafka",
+    )
+    parser.add_argument(
+        "--bootstrap-servers",
+        default=KAFKA_BOOTSTRAP_SERVERS,
+        help=f"Kafka bootstrap servers (default: {KAFKA_BOOTSTRAP_SERVERS})",
+    )
+    parser.add_argument(
+        "--topic",
+        default=KAFKA_TOPIC,
+        help=f"Kafka target topic (default: {KAFKA_TOPIC})",
+    )
+    parser.add_argument(
+        "--csv-out",
+        default=None,
+        help="Optional path to append generated 12-column telemetry events as CSV",
+    )
+    return parser.parse_args(argv)
+
+
+def run_simulator(args, producer=None):
+    """Execute the telemetry simulation loop using validated kafka_producer helpers."""
+    owns_producer = False
+    topic = args.topic
+
+    if not args.dry_run and producer is None:
+        producer, cfg = create_producer(
+            {
+                "bootstrap_servers": args.bootstrap_servers,
+                "topic": args.topic,
+            }
+        )
+        topic = cfg["topic"]
+        owns_producer = True
+
+    csv_file = None
+    csv_writer = None
+    if getattr(args, "csv_out", None):
+        file_exists = os.path.exists(args.csv_out) and os.path.getsize(args.csv_out) > 0
+        csv_file = open(args.csv_out, "a", newline="", encoding="utf-8")
+        csv_writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDNAMES)
+        if not file_exists:
+            csv_writer.writeheader()
+
+    forced = None if args.scenario == "AUTO" else args.scenario
+    event_counter = 0
+
     try:
         while True:
             for container in CONTAINERS:
-                event = generate_event(container, event_counter)
-                producer.send(KAFKA_TOPIC, key=event["container_id"].encode("utf-8"), value=event)
-                print(f"[{event['sensor_status']}] {event['event_id']} | {event['container_id']} | Temp: {event['temperature_c']}C | Vib: {event['vibration_g']}g")
+                if args.max_events > 0 and event_counter >= args.max_events:
+                    return event_counter
+
                 event_counter += 1
-            time.sleep(2)
+                event = generate_event(
+                    container,
+                    event_counter,
+                    forced_scenario=forced,
+                    target_container=args.container,
+                    anomaly_rate=args.anomaly_rate,
+                )
+
+                if csv_writer is not None:
+                    csv_writer.writerow(event)
+
+                if args.dry_run:
+                    print(f"[DRY RUN] {json.dumps(event)}")
+                else:
+                    send_event(producer, topic, event, timeout=10)
+
+            if args.max_events > 0 and event_counter >= args.max_events:
+                return event_counter
+
+            if args.interval > 0:
+                time.sleep(args.interval)
     except KeyboardInterrupt:
-        print("\nSimulator stopped.")
+        print(f"\n[SIMULATOR STOPPED] Published {event_counter} events.")
+        return event_counter
     finally:
-        producer.flush()
-        producer.close()
+        if csv_file is not None:
+            csv_file.close()
+        if owns_producer and producer is not None:
+            close_producer(producer, timeout=10)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    try:
+        run_simulator(args)
+    except ProducerConfigError as exc:
+        print(f"[SIMULATOR CONFIG ERROR] {exc}")
+        raise SystemExit(1) from exc
+    except (RuntimeError, ProducerDeliveryError, KafkaError) as exc:
+        print(f"[SIMULATOR RUNTIME ERROR] {exc}")
+        raise SystemExit(1) from exc
+
 
 if __name__ == "__main__":
     main()
