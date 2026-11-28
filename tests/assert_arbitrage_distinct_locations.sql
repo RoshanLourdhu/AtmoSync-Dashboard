@@ -1,0 +1,6 @@
+SELECT *
+FROM {{ ref('fct_commodity_arbitrage') }}
+WHERE
+    BUY_LOCATION IS NOT NULL
+    AND SELL_LOCATION IS NOT NULL
+    AND BUY_LOCATION = SELL_LOCATION

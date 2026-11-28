@@ -10,6 +10,6 @@ WITH fixture_stats AS (
 
 SELECT *
 FROM fixture_stats
-WHERE TOTAL_ROWS <> 11
+WHERE TOTAL_ROWS <> 12
    OR NULL_PRICE_ROWS <> 1
    OR NULL_QUANTITY_ROWS <> 1

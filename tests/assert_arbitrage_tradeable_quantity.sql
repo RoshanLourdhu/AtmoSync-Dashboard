@@ -1,0 +1,5 @@
+SELECT *
+FROM {{ ref('fct_commodity_arbitrage') }}
+WHERE
+    TRADEABLE_QUANTITY > BUY_QUANTITY
+    OR TRADEABLE_QUANTITY > SELL_QUANTITY
