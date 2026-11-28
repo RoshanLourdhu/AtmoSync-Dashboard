@@ -258,6 +258,57 @@ class TestDashboardConfigValidator(unittest.TestCase):
                 result.stdout,
             )
 
+    def test_unsupported_viz_type(self):
+        config = self.valid_config.copy()
+        config["charts"] = [{
+            "slice_name": "Bad Viz",
+            "viz_type": "unsupported_3d_map",
+            "dataset": "SENSOR_DATA",
+            "metrics": ["avg_temperature"],
+        }]
+        result = validate_dashboard_config(config)
+        self.assertEqual(result["status"], "Failed")
+        self.assertTrue(any("Unsupported viz_type" in e for e in result["errors"]))
+
+    def test_unknown_chart_column_rejected(self):
+        config = {
+            "datasets": [{
+                "table_name": "FCT_ARBITRAGE_OPPORTUNITIES",
+                "columns": [{"name": "container_id"}, {"name": "commodity"}],
+                "metrics": [],
+            }],
+            "charts": [{
+                "slice_name": "Reroute Table",
+                "viz_type": "table",
+                "dataset": "FCT_ARBITRAGE_OPPORTUNITIES",
+                "columns": ["container_id", "current_location"],
+            }],
+            "filters": [],
+        }
+        result = validate_dashboard_config(config)
+        self.assertEqual(result["status"], "Failed")
+        self.assertTrue(any("current_location" in e for e in result["errors"]))
+
+    def test_unknown_chart_time_column_rejected(self):
+        config = {
+            "datasets": [{
+                "table_name": "STG_SENSOR_READINGS",
+                "columns": [{"name": "recorded_at"}],
+                "metrics": [{"metric_name": "avg_temperature", "expression": "AVG(temperature)"}],
+            }],
+            "charts": [{
+                "slice_name": "Temp Trend",
+                "viz_type": "echarts_timeseries_line",
+                "dataset": "STG_SENSOR_READINGS",
+                "time_column": "missing_ts",
+                "metrics": ["avg_temperature"],
+            }],
+            "filters": [],
+        }
+        result = validate_dashboard_config(config)
+        self.assertEqual(result["status"], "Failed")
+        self.assertTrue(any("missing_ts" in e for e in result["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

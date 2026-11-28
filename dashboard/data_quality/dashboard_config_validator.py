@@ -9,6 +9,17 @@ from typing import Any
 import yaml
 
 
+SUPPORTED_VIZ_TYPES = frozenset({
+    "echarts_timeseries_line",
+    "echarts_bar",
+    "echarts_area",
+    "pie",
+    "gauge",
+    "table",
+    "big_number_total",
+})
+
+
 def validate_dashboard_config(config: dict[str, Any]) -> dict[str, Any]:
     """Validate the complete AtmoSync dashboard configuration."""
 
@@ -197,6 +208,38 @@ def validate_dashboard_config(config: dict[str, Any]) -> dict[str, Any]:
         }
 
         chart_valid = True
+
+        viz_type = chart.get("viz_type")
+        if viz_type is not None:
+            if not isinstance(viz_type, str) or viz_type.strip() not in SUPPORTED_VIZ_TYPES:
+                errors.append(
+                    f"Chart '{chart_name}': Unsupported viz_type '{viz_type}'."
+                )
+                chart_valid = False
+
+        declared_columns = {
+            col.get("name")
+            for col in dataset_map[dataset_name].get("columns", [])
+            if isinstance(col, dict) and isinstance(col.get("name"), str)
+        }
+        if declared_columns:
+            for field_key in ("columns", "dimensions"):
+                field_vals = chart.get(field_key, [])
+                if isinstance(field_vals, list):
+                    for col_name in field_vals:
+                        if col_name not in declared_columns:
+                            errors.append(
+                                f"Chart '{chart_name}': Column '{col_name}' "
+                                f"is not defined in dataset '{dataset_name}'."
+                            )
+                            chart_valid = False
+            time_col = chart.get("time_column")
+            if isinstance(time_col, str) and time_col.strip() and time_col not in declared_columns:
+                errors.append(
+                    f"Chart '{chart_name}': Time column '{time_col}' "
+                    f"is not defined in dataset '{dataset_name}'."
+                )
+                chart_valid = False
 
         for metric in chart_metrics:
 

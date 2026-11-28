@@ -1,12 +1,33 @@
 # AtmoSync Superset Datasets and KPI Metrics Specification
 # Defines semantic layers and charts derived from dbt analytical models.
 
+# AtmoSync Superset Datasets and KPI Metrics Specification
+# Defines semantic layers and charts derived from dbt analytical models in ATMOSYNC_DB.
+# Note: Snowflake reflects unquoted column names in UPPERCASE (e.g. CONTAINER_ID, RECORDED_AT)
+# when queried via Superset's /api/v1/chart/data endpoint.
+
 database_name: "AtmoSync Snowflake"
+database: "ATMOSYNC_DB"
 
 datasets:
   - table_name: "STG_SENSOR_READINGS"
-    schema: "STAGING"
+    schema: "ANALYTICS_STAGING"
     description: "Raw validated container sensor time-series telemetry."
+    columns:
+      - name: "container_id"
+        type: "STRING"
+      - name: "shipment_id"
+        type: "STRING"
+      - name: "commodity"
+        type: "STRING"
+      - name: "temperature"
+        type: "FLOAT"
+      - name: "humidity"
+        type: "FLOAT"
+      - name: "vibration"
+        type: "FLOAT"
+      - name: "recorded_at"
+        type: "TIMESTAMP_TZ"
     metrics:
       - metric_name: "avg_temperature"
         verbose_name: "Average Temperature (°C)"
@@ -28,8 +49,27 @@ datasets:
         expression: "COUNT(*)"
 
   - table_name: "FCT_SPOILAGE_RISK"
-    schema: "MARTS"
+    schema: "ANALYTICS_MARTS"
     description: "Container risk scores and classification based on thermal and environmental thresholds."
+    columns:
+      - name: "container_id"
+        type: "STRING"
+      - name: "shipment_id"
+        type: "STRING"
+      - name: "commodity"
+        type: "STRING"
+      - name: "temperature"
+        type: "FLOAT"
+      - name: "humidity"
+        type: "FLOAT"
+      - name: "vibration"
+        type: "FLOAT"
+      - name: "recorded_at"
+        type: "TIMESTAMP_TZ"
+      - name: "risk_level"
+        type: "STRING"
+      - name: "spoilage_score"
+        type: "FLOAT"
     metrics:
       - metric_name: "critical_container_count"
         verbose_name: "Critical Containers Count"
@@ -45,15 +85,38 @@ datasets:
         expression: "AVG(spoilage_score)"
 
   - table_name: "FCT_ARBITRAGE_OPPORTUNITIES"
-    schema: "MARTS"
+    schema: "ANALYTICS_MARTS"
     description: "Latest operational container status and rerouting candidate flags."
+    columns:
+      - name: "container_id"
+        type: "STRING"
+      - name: "shipment_id"
+        type: "STRING"
+      - name: "commodity"
+        type: "STRING"
+      - name: "temperature"
+        type: "FLOAT"
+      - name: "humidity"
+        type: "FLOAT"
+      - name: "vibration"
+        type: "FLOAT"
+      - name: "recorded_at"
+        type: "TIMESTAMP_TZ"
+      - name: "risk_level"
+        type: "STRING"
+      - name: "spoilage_score"
+        type: "FLOAT"
+      - name: "logistics_action_recommendation"
+        type: "STRING"
+      - name: "is_reroute_candidate"
+        type: "BOOLEAN"
     metrics:
       - metric_name: "reroute_candidates_count"
         verbose_name: "Containers Needing Rerouting"
         expression: "COUNT(DISTINCT CASE WHEN is_reroute_candidate = TRUE THEN container_id END)"
 
   - table_name: "FCT_SENSOR_DATA_QUALITY"
-    schema: "MARTS"
+    schema: "ANALYTICS_MARTS"
     description: "Audit and data-quality profiling mart classifying raw sensor events into PASS, WARNING, or FAIL with granular anomaly flags and issue reasons."
     columns:
       - name: "container_id"
@@ -148,9 +211,12 @@ charts:
     dataset: "FCT_ARBITRAGE_OPPORTUNITIES"
     columns:
       - "container_id"
+      - "shipment_id"
       - "commodity"
-      - "current_location"
-      - "destination"
+      - "temperature"
+      - "humidity"
+      - "vibration"
+      - "risk_level"
       - "spoilage_score"
       - "is_reroute_candidate"
       - "logistics_action_recommendation"
