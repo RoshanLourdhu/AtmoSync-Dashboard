@@ -1,3 +1,4 @@
+import py313_compat
 import argparse
 import json
 from telemetry_sink import DBT_STAGING_FIELDS, TelemetrySQLiteSink, to_dbt_commodity_row
