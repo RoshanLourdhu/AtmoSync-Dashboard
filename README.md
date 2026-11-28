@@ -37,3 +37,15 @@ Every JSON message (keyed by `container_id`) and CSV row adheres to the followin
 python atmosync_sensor_simulator.py --dry-run --max-events 5 --interval 0
 python kafka_consumer.py --dry-run --max-messages 5
 python kafka_throughput_test.py --dry-run --num-events 100
+
+### 2. SQLite Persistence, dbt Staging Export & Live Dashboard (Ports 8000 & 3000)
+`powershell
+python .\kafka_consumer.py --dry-run --max-messages 20 --db-out .\atmosync_telemetry.db --dbt-csv-out .\dbt_staging_commodities.csv
+python .\telemetry_sink.py --db .\atmosync_telemetry.db --serve --port 8000
+node .\dashboard\server.js
+`
+
+### 3. Live Local Apache Kafka Streaming (Optional)
+`powershell
+python .\kafka_consumer.py --bootstrap-servers 127.0.0.1:9092 --topic atmosync_sensor_events --db-out .\atmosync_telemetry.db --dbt-csv-out .\dbt_staging_commodities.csv
+`
