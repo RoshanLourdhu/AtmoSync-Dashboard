@@ -76,17 +76,17 @@ def mock_snowflake_connection() -> MagicMock:
 def test_successful_batch_insertion(
     valid_batch: list[dict[str, Any]], mock_snowflake_connection: MagicMock
 ) -> None:
-    """Batch of valid events is inserted via executemany and committed."""
+    """Batch of valid events is inserted in a single atomic execute call and committed."""
     result = insert_sensor_events(valid_batch, connection=mock_snowflake_connection)
     assert result is True
 
     cursor = mock_snowflake_connection.cursor.return_value
-    cursor.executemany.assert_called_once()
-    sql_executed, params_list = cursor.executemany.call_args[0]
+    cursor.execute.assert_called_once()
+    sql_executed, flat_params = cursor.execute.call_args[0]
 
     assert f"INSERT INTO {RAW_SENSOR_TABLE}" in sql_executed
-    assert "PARSE_JSON(%s)" in sql_executed
-    assert len(params_list) == len(valid_batch)
+    assert "PARSE_JSON(" in sql_executed
+    assert len(flat_params) == len(valid_batch) * 4
     assert mock_snowflake_connection.commit.called
     assert not mock_snowflake_connection.rollback.called
 
@@ -136,7 +136,7 @@ def test_batch_database_insertion_failure(
 ) -> None:
     """SQL execution failure raises SnowflakeIngestionError."""
     cursor = mock_snowflake_connection.cursor.return_value
-    cursor.executemany.side_effect = ProgrammingError("Warehouse suspended")
+    cursor.execute.side_effect = ProgrammingError("Warehouse suspended")
 
     with pytest.raises(SnowflakeIngestionError) as exc_info:
         insert_sensor_events(valid_batch, connection=mock_snowflake_connection)
@@ -152,7 +152,7 @@ def test_batch_transaction_rollback_on_failure(
 ) -> None:
     """Failure triggers rollback and leaves commit uncalled."""
     cursor = mock_snowflake_connection.cursor.return_value
-    cursor.executemany.side_effect = Exception("Network connection lost")
+    cursor.execute.side_effect = Exception("Network connection lost")
 
     with pytest.raises(SnowflakeIngestionError):
         insert_sensor_events(valid_batch, connection=mock_snowflake_connection)
@@ -200,7 +200,7 @@ def test_batch_cleanup_on_failure(
     """Cursor and internally created connection are cleaned up on failure."""
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
-    mock_cursor.executemany.side_effect = Exception("Warehouse offline")
+    mock_cursor.execute.side_effect = Exception("Warehouse offline")
     mock_conn.cursor.return_value = mock_cursor
     mock_get_conn.return_value = mock_conn
 
@@ -221,9 +221,10 @@ def test_batch_json_serialization(
     insert_sensor_events(valid_batch, connection=mock_snowflake_connection)
 
     cursor = mock_snowflake_connection.cursor.return_value
-    _, params_list = cursor.executemany.call_args[0]
+    _, flat_params = cursor.execute.call_args[0]
 
-    for idx, (payload_str, _, _, _) in enumerate(params_list):
+    for idx in range(len(valid_batch)):
+        payload_str = flat_params[idx * 4]
         parsed = json.loads(payload_str)
         assert parsed == valid_batch[idx]
         assert parsed["container_id"] == valid_batch[idx]["container_id"]
@@ -239,9 +240,10 @@ def test_batch_kafka_metadata_default(
     insert_sensor_events(valid_batch, connection=mock_snowflake_connection)
 
     cursor = mock_snowflake_connection.cursor.return_value
-    _, params_list = cursor.executemany.call_args[0]
+    _, flat_params = cursor.execute.call_args[0]
 
-    for _, topic, partition, offset in params_list:
+    for idx in range(len(valid_batch)):
+        _, topic, partition, offset = flat_params[idx * 4 : (idx + 1) * 4]
         assert topic == DEFAULT_KAFKA_TOPIC
         assert partition is None
         assert offset is None
@@ -257,7 +259,7 @@ def test_batch_kafka_metadata_custom_and_tuples(
     insert_sensor_events([item1, item2], connection=mock_snowflake_connection)
 
     cursor = mock_snowflake_connection.cursor.return_value
-    _, params_list = cursor.executemany.call_args[0]
+    _, flat_params = cursor.execute.call_args[0]
 
-    assert params_list[0][1:] == ("topic-a", 0, 100)
-    assert params_list[1][1:] == ("topic-b", 1, 200)
+    assert tuple(flat_params[1:4]) == ("topic-a", 0, 100)
+    assert tuple(flat_params[5:8]) == ("topic-b", 1, 200)

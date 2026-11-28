@@ -168,11 +168,17 @@ def insert_sensor_events(
 
         params_list.append((payload_json, ev_topic, ev_partition, ev_offset))
 
-    # 2. Construct parameterized batch SQL statement
+    # 2. Construct parameterized multi-row batch SQL statement compatible with Snowflake VARIANT
+    # Note: snowflake-connector-python's executemany() rejects `INSERT ... SELECT` without `VALUES` (252001),
+    # and Snowflake `VALUES` rejects `PARSE_JSON(%s)` directly. Using `SELECT PARSE_JSON(...) FROM VALUES ...`
+    # executes the entire batch in a single atomic statement.
+    row_placeholders = ", ".join(["(%s, %s, %s, %s)"] * len(params_list))
+    flat_params = [val for row in params_list for val in row]
     sql = (
         f"INSERT INTO {RAW_SENSOR_TABLE} ("
         "EVENT_PAYLOAD, KAFKA_TOPIC, KAFKA_PARTITION, KAFKA_OFFSET"
-        ") SELECT PARSE_JSON(%s), %s, %s, %s"
+        f") SELECT PARSE_JSON(v.payload_json), v.kafka_topic, v.kafka_partition, v.kafka_offset "
+        f"FROM VALUES {row_placeholders} AS v(payload_json, kafka_topic, kafka_partition, kafka_offset)"
     )
 
     # 3. Execute batch in a single atomic transaction
@@ -182,7 +188,7 @@ def insert_sensor_events(
 
     try:
         cursor = conn.cursor()
-        cursor.executemany(sql, params_list)
+        cursor.execute(sql, flat_params)
         conn.commit()
         return True
     except (SnowflakeConnectorError, Exception) as err:
